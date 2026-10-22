@@ -3,6 +3,8 @@
 package app.tellyscope.ui
 
 import app.tellyscope.data.Action
+import app.tellyscope.data.DeviceState
+import app.tellyscope.data.Snapshot
 
 /**
  * Every user-facing sentence about actions and time lives here so wording is
@@ -71,4 +73,35 @@ object Copy {
     fun mb(v: Int) = if (v >= 1024) "%.1f GB".format(v / 1024.0) else "$v MB"
 
     const val ANDROID_SYSTEM = "Android system"
+
+    /** The word next to the status dot, so the state never rests on colour alone. */
+    fun state(s: DeviceState) = when (s) {
+        DeviceState.Online -> "Connected"
+        DeviceState.Offline -> "Offline"
+        DeviceState.NotAllowed -> "Not allowed"
+        DeviceState.Waiting -> "Connecting"
+        DeviceState.NeedsPairing -> "Needs the pairing code"
+        DeviceState.Found -> "Not connected"
+    }
+
+    data class Health(val ok: Boolean, val text: String)
+
+    /**
+     * The one line at the top of a TV's page: the most pressing problem, or that all is well.
+     * [heaviest] are app names by memory use, largest first; there is no per-app storage size yet.
+     */
+    fun health(s: Snapshot, heaviest: List<String>): Health {
+        val storage = s.storageUsedGb?.let { u -> s.storageTotalGb?.takeIf { it > 0 }?.let { u / it } }
+        val ram = if (s.ramTotalMb > 0) s.ramUsedMb.toDouble() / s.ramTotalMb else null
+        val most = heaviest.take(2).takeIf { it.isNotEmpty() }?.let { ": ${it.joinToString(" and ")} use the most" }.orEmpty()
+        return when {
+            storage != null && storage >= FULL -> Health(false, "Storage almost full")
+            ram != null && ram >= FULL -> Health(false, "Memory almost full$most")
+            (s.tempC ?: 0) >= HOT_C -> Health(false, "Running hot")
+            else -> Health(true, "Running fine")
+        }
+    }
+
+    const val FULL = 0.9
+    private const val HOT_C = 80
 }

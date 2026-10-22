@@ -57,12 +57,23 @@ class AppNames(private val dir: File) {
     }
 
     companion object {
-        /** Bundled table first, then `com.google.android.youtube.tv` → "Youtube". */
+        /**
+         * Bundled table first, then a humanised id that keeps the maker: `com.xgimi.assistant` →
+         * "XGIMI Assistant", `com.google.android.youtube.tv` → "Youtube".
+         */
         fun fallback(pkg: String): String = KnownLabels[pkg] ?: humanise(pkg)
 
+        private val GENERIC = setOf("com", "net", "org", "io", "co", "android", "google", "tv", "app", "apps")
+
+        /** Makers whose name isn't simply capitalised. */
+        private val BRAND_CASE = mapOf("xgimi" to "XGIMI", "tcl" to "TCL", "lg" to "LG", "nvidia" to "NVIDIA", "hbo" to "HBO", "bbc" to "BBC")
+
         private fun humanise(pkg: String): String {
-            val parts = pkg.split('.').filter { it !in setOf("com", "android", "google", "tv", "app", "apps", "org") }
-            return (parts.lastOrNull() ?: pkg).replaceFirstChar(Char::uppercase)
+            val parts = pkg.split('.').filter { it.isNotEmpty() && it.lowercase() !in GENERIC }
+            val name = parts.lastOrNull() ?: return pkg
+            // The maker is the first part left; skip it when the name already says it.
+            val maker = parts.first().takeIf { parts.size > 1 && !name.lowercase().contains(it.lowercase()) }
+            return listOfNotNull(maker, name).joinToString(" ") { BRAND_CASE[it.lowercase()] ?: it.replaceFirstChar(Char::uppercase) }
         }
 
         private fun fileName(tv: String) = tv.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".tsv"

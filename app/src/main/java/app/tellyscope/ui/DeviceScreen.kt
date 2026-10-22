@@ -28,10 +28,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -45,8 +50,10 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -72,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
+import app.tellyscope.data.AppNames
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.HistoryBook
@@ -93,6 +101,7 @@ data class DeviceActions(
     val undo: (HistoryEntry) -> Unit = {},
     val reconnect: () -> Unit = {},
     val forget: (String) -> Unit = {},
+    val rename: (String, String?) -> Unit = { _, _ -> },
     val restoreAll: () -> Unit = {},
 )
 
@@ -152,9 +161,17 @@ fun DeviceScreen(
         ) {
             item {
                 Text(
-                    listOfNotNull(device.model, device.android?.let { "Android $it" }, device.hit.ip).joinToString(" · "),
-                    style = SmallNumber,
+                    listOfNotNull(device.model, device.android?.let { "Android $it" }).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Details(
+                    listOfNotNull(
+                        "IP address" to device.hit.ip,
+                        "Port" to device.hit.port.toString(),
+                        (device.manufacturer ?: device.hit.maker)?.let { "Maker" to it },
+                        device.hit.hostname?.let { "Network name" to it },
+                    ),
                 )
             }
             if (device.state == DeviceState.NotAllowed) {
@@ -162,12 +179,26 @@ fun DeviceScreen(
             } else if (offline) {
                 item { OfflineCard(device, state.now, actions.reconnect) }
             }
-            item { StatGrid(ui.snapshot, Modifier.alpha(if (offline) 0.4f else 1f)) }
-            ui.snapshot?.let { snap ->
-                // The :adb source has no per-process list yet; no bars beats an empty card.
-                if (q.isEmpty() && snap.procs.isNotEmpty()) item { UsageCard(snap, ui.apps) }
+            val snap = ui.snapshot
+            if (snap != null) {
+                if (!offline) item { HealthLine(Copy.health(snap, heaviest(snap, ui.apps))) }
+                // Offline: the last stats this phone saw, greyed and dated, rather than a grid of blanks.
+                item { Stats(snap, if (offline) state.now else null) }
+            } else if (offline) {
+                item {
+                    Text(
+                        "No stats yet. They show up once the TV is back on.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            section(
+            snap?.let {
+                // The :adb source has no per-process list yet; no bars beats an empty card.
+                if (q.isEmpty() && it.procs.isNotEmpty() && !offline) item { UsageCard(it, ui.apps) }
+            }
+            // An offline TV can't list anything: sections with nothing in them stay out of the way.
+            if (!offline || ui.apps.isNotEmpty()) section(
                 key = "apps",
                 title = "Apps",
                 count = ui.apps.size,
@@ -179,13 +210,13 @@ fun DeviceScreen(
                     .sortedWith(compareBy({ it.protectedReason != null }, { !it.enabled }, { it.system }, { it.label }))
                 if (apps.isEmpty()) EmptyLine(q)
                 apps.forEach { app ->
-                    AppRow(app, ui.snapshot?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions)
+                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions)
                 }
             }
-            section("procs", "Processes", ui.snapshot?.procs?.size ?: 0, forceOpen = q.isNotEmpty()) {
-                ProcessTable(ui.snapshot?.procs.orEmpty(), ui.apps, q)
+            if (!offline || !snap?.procs.isNullOrEmpty()) section("procs", "Processes", snap?.procs?.size ?: 0, forceOpen = q.isNotEmpty()) {
+                ProcessTable(snap?.procs.orEmpty(), ui.apps, q)
             }
-            section("net", "Network", ui.network?.sockets?.size ?: 0, forceOpen = q.isNotEmpty()) {
+            if (!offline || ui.network != null) section("net", "Network", ui.network?.sockets?.size ?: 0, forceOpen = q.isNotEmpty()) {
                 ui.network?.let { NetworkBlock(it, q) }
             }
             section("history", "History", ui.history.size) {
@@ -199,17 +230,25 @@ fun DeviceScreen(
 private fun DevicePicker(state: UiState, actions: DeviceActions) {
     var open by remember { mutableStateOf(false) }
     var forgetting by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     val device = state.selected ?: return
     if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
+    if (renaming) RenameDialog(device.nickname.orEmpty(), networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
     val offlineCount = state.devices.count { it.state != DeviceState.Online }
     Box {
         Row(
             Modifier.clip(MaterialTheme.shapes.large).clickable { open = true }.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StateDot(device.state)
-            Spacer(Modifier.width(8.dp))
-            Text(name(device), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BrandBadge(device)
+            Column(Modifier.weight(1f, fill = false)) {
+                Text(name(device), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StateDot(device.state)
+                    Spacer(Modifier.width(6.dp))
+                    Text(Copy.state(device.state), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch TV")
         }
         DropdownMenu(open, onDismissRequest = { open = false }) {
@@ -220,8 +259,9 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                         text = { Text(name(d)) },
                         leadingIcon = { StateDot(d.state) },
                         trailingIcon = {
-                            if (d.state != DeviceState.Online) Text(
-                                d.lastSeen?.let { "seen ${Copy.ago(it, state.now)}" } ?: "offline",
+                            Text(
+                                if (d.state == DeviceState.Online) Copy.state(d.state)
+                                else d.lastSeen?.let { "${Copy.state(d.state)}, seen ${Copy.ago(it, state.now)}" } ?: Copy.state(d.state),
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         },
@@ -238,6 +278,11 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 text = { Text("Add a TV") },
                 leadingIcon = { Icon(Icons.Default.Add, null) },
                 onClick = { open = false; actions.addDevice() },
+            )
+            DropdownMenuItem(
+                text = { Text("Rename this TV") },
+                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                onClick = { open = false; renaming = true },
             )
             DropdownMenuItem(
                 text = { Text("Forget this TV") },
@@ -265,7 +310,59 @@ fun RestoreDialog(count: Int, onRestore: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-private fun name(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
+private fun name(d: Device) = d.nickname ?: networkName(d)
+
+private fun networkName(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
+
+/** Stored on this phone only, per TV; an empty name goes back to what the network calls it. */
+@Composable
+fun RenameDialog(current: String, networkName: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename this TV") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Only this phone sees the name. Nothing on the TV changes.")
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(app.tellyscope.data.NameBook.MAX_LENGTH) },
+                    singleLine = true,
+                    placeholder = { Text(networkName) },
+                )
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(text) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * The maker's name on a tile, when the TV said who made it. A wordmark in the app's own colours,
+ * not the maker's logo: no third-party artwork ships in the app.
+ */
+@Composable
+private fun BrandBadge(d: Device) {
+    val maker = (d.manufacturer ?: d.hit.maker)?.let(::brand) ?: return
+    Box(
+        Modifier.padding(end = 10.dp).size(width = 52.dp, height = 36.dp).clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(maker, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1)
+    }
+}
+
+/** Makers of Android TVs and boxes, as they write their own name. Chip makers (Amlogic) don't count. */
+private fun brand(maker: String): String? {
+    val words = maker.split(Regex("[^A-Za-z]+"))
+    return BRANDS.firstOrNull { b -> words.any { it.equals(b, ignoreCase = true) } }
+}
+
+private val BRANDS = listOf(
+    "XGIMI", "Google", "Sony", "TCL", "Xiaomi", "Philips", "Hisense", "NVIDIA", "Amazon", "Nokia",
+    "Toshiba", "Sharp", "Skyworth", "Haier", "Panasonic", "Nebula", "Dangbei", "Formovie", "onn",
+)
 
 /** Forgetting only touches this phone; the TV keeps its own list of allowed computers. */
 @Composable
@@ -284,7 +381,8 @@ private fun StateDot(state: DeviceState) {
     val c = when (state) {
         DeviceState.Online -> MaterialTheme.colorScheme.primary
         DeviceState.Waiting, DeviceState.Found, DeviceState.NeedsPairing -> MaterialTheme.colorScheme.tertiary
-        DeviceState.Offline, DeviceState.NotAllowed -> MaterialTheme.colorScheme.outline
+        DeviceState.Offline -> MaterialTheme.colorScheme.outline
+        DeviceState.NotAllowed -> MaterialTheme.colorScheme.error
     }
     Box(Modifier.size(10.dp).clip(CircleShape).background(c))
 }
@@ -292,29 +390,48 @@ private fun StateDot(state: DeviceState) {
 /** The TV refused (revoked access, a reset, or Deny); retrying stopped so the prompt doesn't nag. */
 @Composable
 private fun NotAllowedCard(onConnect: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("The TV didn't allow this phone", style = MaterialTheme.typography.titleSmall)
+            CardTitle(Icons.Default.Warning, "The TV didn't allow this phone")
             Text(
                 "Its debugging access was turned off, reset, or denied. Tellyscope stopped asking so the TV isn't flooded with prompts.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            FilledTonalButton(onClick = onConnect) { Text("Connect again") }
+            Button(onClick = onConnect) { Text("Connect again") }
             Text(
                 "Then press Allow on the TV, and tick \"Always allow from this computer\".",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
 
 @Composable
+private fun CardTitle(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.titleSmall)
+    }
+}
+
+@Composable
 private fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    // Material 3 has no warning role; tertiary is the standard stand-in, kept apart from error.
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Offline", style = MaterialTheme.typography.titleSmall)
+                CardTitle(Icons.Default.Info, "Offline")
                 Text(
                     "Last seen ${device.lastSeen?.let { Copy.ago(it, now) } ?: "a while ago"}. It reconnects on its own when the TV is back on.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -326,26 +443,58 @@ private fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
     }
 }
 
-/** Stat strip, phone-shaped: a 3×2 grid. Missing stats show "—", never 0. */
+/** App names by memory use, largest first, for the health line. */
+private fun heaviest(snap: Snapshot, apps: List<AppInfo>): List<String> {
+    val labels = apps.associate { it.packageName to it.label }
+    return snap.procs.filter { it.packageName != null }
+        .groupBy { labels[it.packageName] ?: AppNames.fallback(it.packageName!!) }
+        .mapValues { (_, ps) -> ps.sumOf { it.ramMb } }
+        .entries.sortedByDescending { it.value }.map { it.key }
+}
+
 @Composable
-private fun StatGrid(s: Snapshot?, modifier: Modifier = Modifier) {
+private fun HealthLine(h: Copy.Health) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            if (h.ok) Icons.Default.CheckCircle else Icons.Default.Warning,
+            contentDescription = null,
+            Modifier.size(24.dp),
+            tint = if (h.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(h.text, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/**
+ * Memory and storage as "75% used" with a bar, then the small stats. Missing stats show "—",
+ * never 0. [staleSince] set means the TV is offline: these are its last numbers, greyed and dated.
+ */
+@Composable
+private fun Stats(s: Snapshot, staleSince: Long?) {
     val cells = listOf(
-        "CPU" to s?.let { "${it.cpuPercent}%" },
-        // Units live in the label so the value fits a third of a phone width.
-        "RAM GB" to s?.let { "%.1f/%.0f".format(it.ramUsedMb / 1024.0, it.ramTotalMb / 1024.0) },
-        "Storage GB" to s?.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> "%.1f/%.0f".format(u, t) } },
-        "Temp" to s?.tempC?.let { "$it°C" },
-        "Up" to s?.let { Copy.uptime(it.uptimeSeconds) },
-        "Screen" to s?.screenOn?.let { if (it) "on" else "off" },
+        "CPU" to "${s.cpuPercent}%",
+        "Temperature" to s.tempC?.let { "$it°C" },
+        "On for" to Copy.uptime(s.uptimeSeconds),
+        "Screen" to s.screenOn?.let { if (it) "On" else "Off" },
     )
-    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.padding(vertical = 8.dp)) {
-            cells.chunked(3).forEach { row ->
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (staleSince != null) {
+                Text(
+                    "As of ${Copy.ago(s.at, staleSince)}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Column(Modifier.alpha(if (staleSince != null) 0.5f else 1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Meter("Memory", s.ramUsedMb / 1024.0, s.ramTotalMb / 1024.0)
+                s.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> Meter("Storage", u, t) } }
                 Row(Modifier.fillMaxWidth()) {
-                    row.forEach { (label, value) ->
-                        Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(value ?: "—", style = StatNumber, maxLines = 1)
+                    cells.forEach { (label, value) ->
+                        Column(Modifier.weight(1f)) {
+                            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(value ?: "—", style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"), maxLines = 1)
                         }
                     }
                 }
@@ -354,11 +503,30 @@ private fun StatGrid(s: Snapshot?, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+private fun Meter(label: String, usedGb: Double, totalGb: Double) {
+    val frac = if (totalGb > 0) (usedGb / totalGb).toFloat().coerceIn(0f, 1f) else 0f
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${(frac * 100).toInt()}% used", style = StatNumber)
+            }
+            Text("%.1f of %.0f GB".format(usedGb, totalGb), style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LinearProgressIndicator(
+            progress = { frac },
+            Modifier.fillMaxWidth(),
+            color = if (frac >= Copy.FULL) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
 /** Grey bars, no chart library: top 6 by value, the rest summed as "other". */
 @Composable
 private fun UsageCard(snap: Snapshot, apps: List<AppInfo>) {
     val labels = apps.associate { it.packageName to it.label }
-    fun label(p: Proc) = p.packageName?.let { labels[it] ?: it } ?: Copy.ANDROID_SYSTEM
+    fun label(p: Proc) = p.packageName?.let { labels[it] ?: AppNames.fallback(it) } ?: Copy.ANDROID_SYSTEM
     val byApp = snap.procs.groupBy(::label)
     var cpu by rememberSaveable { mutableStateOf(false) }
     val rows = byApp.map { (name, ps) ->
@@ -417,7 +585,7 @@ private fun LazyListScope.section(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text("$count", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (count > 0) Text("$count", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = if (shown) "Collapse" else "Expand", Modifier.rotate(turn))
             }
@@ -484,6 +652,9 @@ private fun AppRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (app.protectedReason != null) {
+                Icon(Icons.Default.Lock, contentDescription = "Protected", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (busy) androidx.compose.material3.LoadingIndicator(Modifier.size(32.dp))
         }
         val proposed = pending?.takeIf { it.first == app.packageName }?.second
@@ -513,7 +684,7 @@ private fun AppRow(
 private fun ProcessTable(procs: List<Proc>, apps: List<AppInfo>, q: String) {
     val labels = apps.associate { it.packageName to it.label }
     val groups = procs
-        .groupBy { p -> p.packageName?.let { labels[it] ?: it } ?: Copy.ANDROID_SYSTEM }
+        .groupBy { p -> p.packageName?.let { labels[it] ?: AppNames.fallback(it) } ?: Copy.ANDROID_SYSTEM }
         .filter { (name, ps) -> q.isEmpty() || name.lowercase().contains(q) || ps.any { it.name.lowercase().contains(q) } }
         .toList()
         .sortedByDescending { (_, ps) -> ps.sumOf { it.cpuPercent } }
@@ -549,9 +720,15 @@ private fun ProcessTable(procs: List<Proc>, apps: List<AppInfo>, q: String) {
 private fun NetworkBlock(n: NetworkInfo, q: String) {
     if (q.isEmpty()) {
         KeyValue("Connection", listOfNotNull(if (n.iface == "wifi") "Wi-Fi" else "Ethernet", n.ssid).joinToString(" · "))
-        KeyValue("IP", n.ip)
-        n.mac?.let { KeyValue("MAC", it) }
-        n.rssi?.let { r -> KeyValue("Signal", "$r dBm · ${signalWord(r)}" + (n.linkMbps?.let { " · $it Mbps" } ?: "")) }
+        n.rssi?.let { r -> KeyValue("Signal", signalWord(r).replaceFirstChar(Char::uppercase)) }
+        Details(
+            listOfNotNull(
+                "IP address" to n.ip,
+                n.mac?.let { "MAC" to it },
+                n.rssi?.let { "Signal" to "$it dBm" },
+                n.linkMbps?.let { "Link speed" to "$it Mbps" },
+            ),
+        )
         Spacer(Modifier.height(8.dp))
         Text("Data used", style = MaterialTheme.typography.titleSmall)
         Bars(n.traffic.map { it.app to (it.rxMb + it.txMb).toDouble() }, fmt = { Copy.mb(it.toInt()) })
@@ -573,14 +750,6 @@ private fun signalWord(rssi: Int) = when {
     rssi >= -67 -> "good"
     rssi >= -75 -> "weak"
     else -> "very weak"
-}
-
-@Composable
-private fun KeyValue(k: String, v: String) {
-    Row(Modifier.padding(vertical = 2.dp)) {
-        Text(k, Modifier.width(96.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(v, style = SmallNumber)
-    }
 }
 
 @Composable

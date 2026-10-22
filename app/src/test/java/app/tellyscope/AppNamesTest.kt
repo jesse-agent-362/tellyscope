@@ -39,12 +39,18 @@ class AppNamesTest {
         assertArrayEquals(icon, names.getValue("com.netflix.ninja").icon)
     }
 
+    @Test fun fallbackKeepsTheMaker() {
+        assertEquals("XGIMI Assistant", AppNames.fallback("com.xgimi.assistant"))
+        assertEquals("Youtube", AppNames.fallback("com.google.android.youtube"))
+        assertEquals("Spotifytv", AppNames.fallback("com.spotify.spotifytv")) // maker already in the name
+    }
+
     @Test fun fallbackWhenTheHelperFails() = runBlocking {
         val helper = Helper(fail = true)
         val appNames = AppNames(tmp.root)
         val names = appNames.names("SN1", listOf(netflix, odd), helper::describe)
         assertEquals("Netflix", names.getValue("com.netflix.ninja").label) // bundled table
-        assertEquals("Weatherbox", names.getValue("com.example.weatherbox").label) // humanised id
+        assertEquals("Example Weatherbox", names.getValue("com.example.weatherbox").label) // humanised id, maker kept
         assertNull(names.getValue("com.netflix.ninja").icon) // letter avatar
         // A refusal isn't retried on every open; the next app start tries again.
         appNames.names("SN1", listOf(netflix, odd), helper::describe)

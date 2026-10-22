@@ -26,6 +26,9 @@ interface DeviceSource {
     /** Try a known TV again after it stopped at "not allowed": the TV shows its Allow prompt. */
     suspend fun reconnect(deviceId: String)
 
+    /** The user's own name for a TV; blank goes back to the network name. Kept per [historyKey]. */
+    suspend fun rename(deviceId: String, name: String?)
+
     /** Stop reconnecting to a TV and drop it from the remembered list. */
     suspend fun forget(deviceId: String)
 

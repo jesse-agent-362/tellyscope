@@ -3,7 +3,9 @@
 package app.tellyscope.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -159,10 +162,11 @@ private fun HitCard(
                 Column(Modifier.weight(1f)) {
                     Text(hit.hostname ?: hit.maker ?: "Android device", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        listOfNotNull(hit.maker ?: "Unknown maker", hit.ip).joinToString(" · "),
-                        style = SmallNumber,
+                        hit.maker ?: "Unknown maker",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Details(listOf("IP address" to hit.ip, "Port" to hit.port.toString()))
                 }
                 when (row) {
                     RowState.Found -> FilledTonalButton(onClick = { onConnect(hit) }) { Text("Connect") }
@@ -208,28 +212,58 @@ private fun HitCard(
                         "On the TV: Settings → Developer options → Wireless debugging → Pair device with pairing code. Type the 6 digits it shows:",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = row.input,
-                            onValueChange = { onCode(hit, it) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            enabled = !row.busy,
-                            textStyle = StatNumber,
-                            placeholder = { Text("000000", style = StatNumber) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            isError = row.error != null,
+                    CodeBoxes(row.input, onChange = { onCode(hit, it) }, enabled = !row.busy, isError = row.error != null)
+                    val missing = CODE_LENGTH - row.input.length
+                    // The button says what's missing instead of sitting there disabled with no reason.
+                    Button(onClick = { onPair(hit) }, enabled = !row.busy && missing == 0) {
+                        Text(
+                            when {
+                                row.busy -> "Pairing…"
+                                missing == 0 -> "Pair"
+                                missing == 1 -> "1 more digit"
+                                else -> "$missing more digits"
+                            },
                         )
-                        Spacer(Modifier.width(12.dp))
-                        Button(onClick = { onPair(hit) }, enabled = !row.busy && row.input.length == 6) {
-                            Text(if (row.busy) "Pairing…" else "Pair")
-                        }
                     }
-                    row.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    row.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    row.detail?.let { Details(listOf("From the TV" to it)) }
                 }
             }
         }
     }
+}
+
+private const val CODE_LENGTH = 6
+
+/** One box per digit, on the number keypad. A single hidden field underneath, so paste and delete just work. */
+@Composable
+private fun CodeBoxes(code: String, onChange: (String) -> Unit, enabled: Boolean, isError: Boolean) {
+    BasicTextField(
+        value = code,
+        onValueChange = onChange,
+        enabled = enabled,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        decorationBox = { _ ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(CODE_LENGTH) { i ->
+                    val current = enabled && i == code.length
+                    val color = when {
+                        isError -> MaterialTheme.colorScheme.error
+                        current -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.outline
+                    }
+                    Box(
+                        Modifier.size(width = 44.dp, height = 56.dp)
+                            .border(if (current) 2.dp else 1.dp, color, MaterialTheme.shapes.medium),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(code.getOrNull(i)?.toString().orEmpty(), style = StatNumber)
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -248,7 +282,7 @@ private fun AddByIpDialog(subnet: String?, onDismiss: () -> Unit, onSubmit: (Str
                     value = text,
                     onValueChange = { text = it; error = null },
                     singleLine = true,
-                    textStyle = StatNumber,
+                    textStyle = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
                     isError = error != null,
                     supportingText = error?.let { { Text(it) } },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),

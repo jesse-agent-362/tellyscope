@@ -163,6 +163,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 undo = vm::undo,
                 reconnect = { state.selectedId?.let(vm::reconnect) },
                 forget = vm::forget,
+                rename = vm::rename,
                 restoreAll = vm::restoreAll,
             ),
         )

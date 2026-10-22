@@ -10,7 +10,6 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
 import app.tellyscope.data.AppNames
@@ -32,7 +31,9 @@ import app.tellyscope.ui.ScanScreen
 import app.tellyscope.ui.ScanUi
 import app.tellyscope.ui.UiState
 import app.tellyscope.ui.theme.TellyscopeTheme
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
 import java.io.ByteArrayOutputStream
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
@@ -63,7 +64,13 @@ class ScreenshotTest {
     private val chromecast = ScanHit("192.168.1.57", 37211, ScanKind.Wireless, "chromecast", "Google")
     private val unknown = ScanHit("192.168.1.88", 5555, ScanKind.Classic, null, null)
 
-    private fun shot(name: String, dark: Boolean = false, before: () -> Unit = {}, content: @Composable () -> Unit) {
+    /**
+     * [screen] captures every window, so a dialog shows over its scrim. Robolectric doesn't apply
+     * the platform dialog width, so dialogs still render edge to edge here; on a phone the
+     * default `DialogProperties` give them the usual margins.
+     */
+    @OptIn(ExperimentalRoborazziApi::class)
+    private fun shot(name: String, dark: Boolean = false, screen: Boolean = false, before: () -> Unit = {}, content: @Composable () -> Unit) {
         // Expressive indicators animate forever, so the clock never idles on its own:
         // drive it by hand and capture a fixed frame.
         compose.mainClock.autoAdvance = false
@@ -71,7 +78,8 @@ class ScreenshotTest {
         compose.mainClock.advanceTimeBy(1_000)
         before()
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/${name}${if (dark) "_dark" else ""}.png")
+        val path = "build/outputs/roborazzi/${name}${if (dark) "_dark" else ""}.png"
+        if (screen) captureScreenRoboImage(path) else compose.onRoot().captureRoboImage(path)
     }
 
     private fun scan(ui: ScanUi, dark: Boolean = false, name: String) = shot(name, dark) {
@@ -135,12 +143,20 @@ class ScreenshotTest {
     @Test fun device_offline() {
         val base = deviceState()
         val off = base.devices.last()
+        // The last stats this phone saw, 14 minutes before it went away.
+        val last = fake.snapshot(off.id).copy(at = now - 14 * 60_000)
         shot("06_device_offline") {
-            DeviceScreen(base.copy(selectedId = off.id, device = DeviceUi(), showOffline = true), DeviceActions())
+            DeviceScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
         }
     }
 
-    @Config(qualifiers = "w411dp-h1500dp-xxhdpi")
+    @Test fun device_storageFull() {
+        val state = deviceState { copy(snapshot = snapshot?.copy(storageUsedGb = 29.1, storageTotalGb = 32.0)) }
+        shot("13_device_storage_full") { DeviceScreen(state, DeviceActions()) }
+    }
+
+    // Tall enough that History is composed without scrolling: the lazy list never lays it out otherwise.
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun device_history() {
         val history = listOf(
             HistoryEntry(2, xgimi.ip, now - 40_000, Action.Disable, "com.xgimi.ota", "XGIMI Updates", Action.Enable, null),
@@ -148,7 +164,7 @@ class ScreenshotTest {
         )
         val openHistory = {
             compose.onNodeWithText("Apps").performClick() // fold the long list away
-            compose.onNodeWithText("History").performScrollTo().performClick()
+            compose.onNodeWithText("History").performClick()
             Unit
         }
         shot("07_device_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
@@ -197,7 +213,7 @@ class ScreenshotTest {
 
     @Test fun permission_denied() = shot("08_permission_denied") { PermissionScreen(denied = true, canAsk = true, {}, {}) }
 
-    @Test fun forget() = shot("09_forget") { ForgetDialog("xgimi-projector", {}, {}) }
+    @Test fun forget() = shot("09_forget", screen = true) { ForgetDialog("xgimi-projector", {}, {}) }
 
     @Test fun scan_offWifi() = scan(
         ScanUi(scanning = false, noLan = true, hits = listOf(chromecast), rows = mapOf(chromecast.ip to RowState.Found)),
@@ -212,5 +228,5 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun restore() = shot("11_restore") { RestoreDialog(2, {}, {}) }
+    @Test fun restore() = shot("11_restore", screen = true) { RestoreDialog(2, {}, {}) }
 }

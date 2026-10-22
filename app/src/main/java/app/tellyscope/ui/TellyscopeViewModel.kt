@@ -30,7 +30,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 sealed interface RowState {
     data object Found : RowState
     data class Waiting(val since: Long) : RowState
-    data class Code(val input: String = "", val busy: Boolean = false, val error: String? = null) : RowState
+    /** [error] is the plain sentence; [detail] is what the TV said, shown under Details. */
+    data class Code(val input: String = "", val busy: Boolean = false, val error: String? = null, val detail: String? = null) : RowState
     data object NotAllowed : RowState
 }
 
@@ -65,6 +66,9 @@ data class UiState(
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
 
+private const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
+private const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
+
 /** [DeviceUi.busy] value while "Restore everything" runs. */
 const val RESTORING = "restore"
 
@@ -84,6 +88,9 @@ class TellyscopeViewModel(
     /** One-shot snackbar lines: the TV refused, went away mid-action, or a restore finished. */
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    /** Last stats per TV, so an offline page shows where it stood instead of blanks. Lives as long as the app. */
+    private val lastSnapshot = mutableMapOf<String, Snapshot>()
 
     private var scanJob: Job? = null
     private var liveJob: Job? = null
@@ -155,12 +162,12 @@ class TellyscopeViewModel(
 
     fun pair(hit: ScanHit) {
         val row = _state.value.scan.rows[hit.ip] as? RowState.Code ?: return
-        setRow(hit.ip, row.copy(busy = true, error = null))
+        setRow(hit.ip, row.copy(busy = true, error = null, detail = null))
         viewModelScope.launch {
             when (val r = source.pair(hit, row.input)) {
                 is ConnectResult.Online -> online(r.device)
-                is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = r.message))
-                is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = r.message))
+                is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = WRONG_CODE, detail = r.message))
+                is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = UNREACHABLE, detail = r.message))
                 ConnectResult.NotAllowed -> setRow(hit.ip, RowState.NotAllowed)
                 ConnectResult.NeedsPairing -> setRow(hit.ip, row.copy(busy = false, error = "The TV still wants a code. Check the number on screen and try again."))
             }
@@ -195,7 +202,7 @@ class TellyscopeViewModel(
     fun select(id: String?) {
         liveJob?.cancel()
         mediumJob?.cancel()
-        _state.update { it.copy(selectedId = id, device = DeviceUi(), query = "") }
+        _state.update { it.copy(selectedId = id, device = DeviceUi(snapshot = id?.let(lastSnapshot::get)), query = "") }
         val device = _state.value.selected ?: return
         // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
         viewModelScope.launch {
@@ -204,7 +211,10 @@ class TellyscopeViewModel(
         }
         if (device.state != DeviceState.Online) return
         liveJob = viewModelScope.launch {
-            source.live(id!!).collect { snap -> _state.update { it.copy(device = it.device.copy(snapshot = snap)) } }
+            source.live(id!!).collect { snap ->
+                lastSnapshot[id] = snap
+                _state.update { it.copy(device = it.device.copy(snapshot = snap)) }
+            }
         }
         mediumJob = viewModelScope.launch {
             // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
@@ -238,6 +248,13 @@ class TellyscopeViewModel(
             source.reconnect(id)
             refreshDevices()
             select(id)
+        }
+    }
+
+    fun rename(id: String, name: String?) {
+        viewModelScope.launch {
+            source.rename(id, name)
+            _state.update { it.copy(devices = source.known()) }
         }
     }
 

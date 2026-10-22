@@ -57,6 +57,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     /** Wireless debugging advertises pairing and connect on different ports. */
     private val pairingPorts = ConcurrentHashMap<String, Int>()
     private val book = HistoryBook(File(appContext.filesDir, "history.tsv"))
+    private val names = NameBook(File(appContext.filesDir, "names.tsv"))
     /** Last label seen per package, so history entries read like the app list. */
     private val labels = ConcurrentHashMap<String, String>()
     private val helperDex by lazy { appContext.assets.open("label-helper.jar").use { it.readBytes() } }
@@ -121,6 +122,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun reconnect(deviceId: String) {
         restored.await()
         links[deviceId]?.connect()
+    }
+
+    override suspend fun rename(deviceId: String, name: String?) {
+        restored.await()
+        names.set(key(deviceId), name)
     }
 
     override suspend fun forget(deviceId: String) {
@@ -321,6 +327,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
         if (keys.put(deviceId, key) != key) {
             book.rekey(deviceId, key)
+            names.rekey(deviceId, key)
             remember(deviceId)
         }
         return key
@@ -354,6 +361,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             manufacturer = stats?.manufacturer,
             android = stats?.androidVersion,
             lastSeen = link?.lastSeenMillis ?: saved[id]?.lastSeen,
+            nickname = names[keys[id] ?: id],
         )
     }
 

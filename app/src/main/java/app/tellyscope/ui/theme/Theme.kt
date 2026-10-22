@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -58,9 +57,9 @@ private val DarkBrand = darkColorScheme(
     surfaceContainerHigh = Color(0xFF252B2B),
 )
 
-/** Numbers come first: stats use a tabular monospace so values don't jitter as they update. */
-val StatNumber = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, fontSize = 20.sp, lineHeight = 26.sp)
-val SmallNumber = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp)
+/** Numbers come first: the app font with tabular figures, so values line up and don't jitter as they update. */
+val StatNumber = TextStyle(fontWeight = FontWeight.Medium, fontSize = 28.sp, lineHeight = 34.sp, fontFeatureSettings = "tnum")
+val SmallNumber = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = "tnum")
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

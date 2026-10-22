@@ -43,6 +43,8 @@ data class Device(
     val android: String?,
     /** Epoch millis of the last successful poll. */
     val lastSeen: Long?,
+    /** The name the user gave it; wins over the network name. */
+    val nickname: String? = null,
 )
 
 sealed interface ConnectResult {
