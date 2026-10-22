@@ -46,7 +46,6 @@ jobs:
       - name: Build
         env:
           RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease -Ptellyscope.alpha=${{ github.run_number }} --console=plain
@@ -120,7 +119,6 @@ jobs:
         if: steps.version.outputs.new == 'true'
         env:
           RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --console=plain

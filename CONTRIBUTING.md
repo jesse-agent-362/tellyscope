@@ -15,7 +15,7 @@ Thanks for helping! Tellyscope is pre-alpha, so the code and its structure are s
 
 - **Alpha:** every push to `dev` builds `app.tellyscope.alpha`, which installs next to the release, and replaces the `alpha` pre-release on GitHub with it.
 - **Shipping:** a release is a pull request from `dev` into `main`, merged with a merge commit. It must raise `versionName` and `versionCode` in `app/build.gradle.kts` past the latest `v*` tag and add that version's section to [CHANGELOG.md](CHANGELOG.md); CI refuses anything else. Merging it tags `vX.Y.Z` and publishes a GitHub release with the signed APK, notes from the changelog section and the commits since the previous tag.
-- **Signing:** CI signs both builds from four repository secrets: `RELEASE_KEYSTORE_BASE64` (the keystore, base64-encoded), `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`. Only the maintainer holds the key; never commit a keystore. Local release builds are unsigned.
+- **Signing:** CI signs both builds from three repository secrets: `RELEASE_KEYSTORE_BASE64` (the keystore, base64-encoded), `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD`, which is both the store and the key password (keytool's PKCS12 default uses one for both). Only the maintainer holds the key; never commit a keystore. Local release builds are unsigned.
 
 ## Debloat lists
 

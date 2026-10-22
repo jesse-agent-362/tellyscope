@@ -34,9 +34,11 @@ android {
         if (keystore != null) {
             create("release") {
                 storeFile = file(keystore)
-                storePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").get()
+                // keytool's PKCS12 default has one password for the store and the key.
+                val password = providers.environmentVariable("RELEASE_KEY_PASSWORD").get()
+                storePassword = password
                 keyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").get()
-                keyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").get()
+                keyPassword = password
             }
         }
     }
