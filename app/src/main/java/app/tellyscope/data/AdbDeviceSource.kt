@@ -234,8 +234,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         // Older pm rejects --show-versioncode and prints no packages; list again without it.
         val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
-        val serial = shell.shell("getprop ro.serialno").output.trim()
-        val names = appNames.names(serial.ifEmpty { deviceId }, listed, LabelHelper(shell, helperDex)::describe)
+        // Same key as history: a placeholder serial must not give two boxes one cache.
+        val names = appNames.names(key(deviceId), listed, LabelHelper(shell, helperDex)::describe)
         return listed.map { p ->
             val name = names.getValue(p.name)
             labels[p.name] = name.label

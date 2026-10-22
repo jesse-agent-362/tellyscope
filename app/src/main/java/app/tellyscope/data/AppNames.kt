@@ -26,7 +26,7 @@ class AppNames(private val dir: File) {
     private val unanswered = mutableSetOf<Pair<String, String>>()
 
     /**
-     * [tv] identifies the TV (its serial); [packages] is `pm list packages --show-versioncode`.
+     * [tv] identifies the TV (its [historyKey]); [packages] is `pm list packages --show-versioncode`.
      * [describe] runs the helper on that TV for the packages it's given, null if it couldn't.
      */
     suspend fun names(
