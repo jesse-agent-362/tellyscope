@@ -3,6 +3,8 @@
 package app.tellyscope.data
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.Actions
 import app.tellyscope.adb.Connector
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transformWhile
 import java.io.File
+import java.net.Inet4Address
 import java.util.concurrent.ConcurrentHashMap
 import app.tellyscope.adb.Action as AdbAction
 import app.tellyscope.adb.ConnectResult as AdbConnectResult
@@ -45,8 +48,25 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         Connector.init(File(appContext.filesDir, "adbkey.pem"))
     }
 
+    /**
+     * The subnet of the active network if it's Wi-Fi or Ethernet. On mobile data or a VPN there is
+     * no sweep, so we never probe a carrier's or VPN's neighbours; mDNS and add-by-IP still work.
+     */
+    private fun lanHosts(): List<String> {
+        val cm = appContext.getSystemService(ConnectivityManager::class.java) ?: return emptyList()
+        val network = cm.activeNetwork ?: return emptyList()
+        val caps = cm.getNetworkCapabilities(network) ?: return emptyList()
+        val local = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        if (!local || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return emptyList()
+        return cm.getLinkProperties(network)?.linkAddresses.orEmpty()
+            .filter { it.address is Inet4Address }
+            .flatMap { LanScanner.subnetHosts(it.address as Inet4Address, it.prefixLength) }
+            .distinct()
+    }
+
     override fun scan(): Flow<ScanEvent> = flow {
-        LanScanner(KadbMdnsAndroid(appContext)).scan().collect { h ->
+        LanScanner(KadbMdnsAndroid(appContext)).scan(lanHosts()).collect { h ->
             if (h.kind == AdbHit.Kind.PAIRING) {
                 pairingPorts[h.host] = h.port
                 if (hits.containsKey(h.host)) return@collect
@@ -133,7 +153,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 iconColor = null,
                 system = p.name in system,
                 enabled = p.name !in disabled,
-                protectedReason = Protected.reason(p.name, home)?.let(::reasonText),
+                // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
+                protectedReason = (if (home.isEmpty()) ProtectedReason.UNKNOWN_HOME else Protected.reason(p.name, home))
+                    ?.let(::reasonText),
                 version = "",
             )
         }.sortedBy { it.label.lowercase() }
@@ -208,5 +230,6 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.KEYBOARD -> "you'd lose the on-screen keyboard"
         ProtectedReason.TV_INPUTS_REMOTE -> "your remote or HDMI inputs could stop working"
         ProtectedReason.SETUP_WIZARD -> "the TV may get stuck on restart without it"
+        ProtectedReason.UNKNOWN_HOME -> "this TV didn't say which app is its home screen, so Tellyscope won't change anything"
     }
 }
