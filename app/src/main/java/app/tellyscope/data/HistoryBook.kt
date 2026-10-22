@@ -3,6 +3,7 @@
 package app.tellyscope.data
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
 
 /**
  * Every change Tellyscope made, per TV, plus the TV's disabled-apps list from before the first
@@ -146,7 +147,10 @@ suspend fun restoreEach(packages: List<String>, enable: suspend (String) -> Hist
     for (pkg in packages) {
         try {
             done += enable(pkg)
-        } catch (e: IllegalStateException) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A dropped connection counts too: the user still needs to know what already changed.
             val why = e.message ?: "the TV refused"
             throw IllegalStateException(
                 if (done.isEmpty()) "couldn't turn apps back on: $why"

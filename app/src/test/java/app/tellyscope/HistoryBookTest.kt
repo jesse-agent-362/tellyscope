@@ -133,4 +133,14 @@ class HistoryBookTest {
         }.exceptionOrNull()
         assertEquals("turned 2 apps back on, then stopped: the TV refused", e?.message)
     }
+
+    @Test fun aDroppedConnectionStillSaysHowFarItGot() = runTest {
+        val e = runCatching {
+            restoreEach(listOf("a", "b")) { pkg ->
+                if (pkg == "b") throw java.io.IOException("connection reset")
+                HistoryEntry(1, tv, 0, Action.Enable, pkg, pkg, Action.Disable, null)
+            }
+        }.exceptionOrNull()
+        assertEquals("turned 1 app back on, then stopped: connection reset", e?.message)
+    }
 }
