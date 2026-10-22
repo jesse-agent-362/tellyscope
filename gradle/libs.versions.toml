@@ -8,6 +8,10 @@ activity-compose = "1.13.0"
 core-ktx = "1.19.1"
 lifecycle = "2.11.0"
 kadb = "2.1.5"
+# kadb-mdns stops at 2.1.4; 2.1.5 was not published for it.
+kadb-mdns = "2.1.4"
+coroutines = "1.11.0"
+conscrypt = "2.5.2"
 junit = "4.13.2"
 
 [libraries]
@@ -20,6 +24,11 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
 kadb = { module = "com.flyfishxu:kadb", version.ref = "kadb" }
+kadb-mdns = { module = "com.flyfishxu:kadb-mdns", version.ref = "kadb-mdns" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+conscrypt-openjdk-uber = { module = "org.conscrypt:conscrypt-openjdk-uber", version.ref = "conscrypt" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]

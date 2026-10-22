@@ -21,5 +21,9 @@ kotlin {
 
 dependencies {
     api(libs.kadb)
+    api(libs.kadb.mdns)
+    api(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
