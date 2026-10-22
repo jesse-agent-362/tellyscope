@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+package app.tellyscope.data
+
+import java.io.File
+
+/**
+ * Every change Tellyscope made, per TV, plus the TV's disabled-apps list from before the first
+ * one. Kept in a tab-separated file so undo and "Restore everything" survive an app restart;
+ * with no file (screenshots, the fake source) it lives in memory only.
+ */
+class HistoryBook(private val file: File? = null) {
+    private val entries = mutableListOf<HistoryEntry>()
+    private val baselines = mutableMapOf<String, Set<String>>()
+
+    init {
+        file?.takeIf { it.exists() }?.readLines()?.forEach(::parse)
+    }
+
+    /** Newest first. */
+    @Synchronized
+    fun entries(deviceId: String): List<HistoryEntry> = entries.filter { it.deviceId == deviceId }.sortedByDescending { it.id }
+
+    @Synchronized
+    fun hasBaseline(deviceId: String) = deviceId in baselines
+
+    /** What was already disabled before Tellyscope changed anything; written once per TV. */
+    @Synchronized
+    fun setBaseline(deviceId: String, disabled: Set<String>) {
+        if (deviceId in baselines) return
+        baselines[deviceId] = disabled
+        save()
+    }
+
+    @Synchronized
+    fun record(
+        deviceId: String,
+        at: Long,
+        action: Action,
+        packageName: String,
+        label: String,
+        undo: Action?,
+        undoing: Long? = null,
+    ): HistoryEntry {
+        if (undoing != null) {
+            val i = entries.indexOfFirst { it.id == undoing }
+            if (i >= 0) entries[i] = entries[i].copy(undoneAt = at)
+        }
+        val entry = HistoryEntry((entries.maxOfOrNull { it.id } ?: 0) + 1, deviceId, at, action, packageName, label, undo, null)
+        entries += entry
+        save()
+        return entry
+    }
+
+    /**
+     * Apps Tellyscope left disabled on this TV: the last disable/enable it ran was a disable, and
+     * the app wasn't already off before Tellyscope's first change. Restore turns on only these.
+     */
+    @Synchronized
+    fun restorable(deviceId: String): List<String> {
+        val before = baselines[deviceId].orEmpty()
+        return leftDisabled(entries.filter { it.deviceId == deviceId }).filter { it !in before }
+    }
+
+    companion object {
+        /** Packages whose last disable/enable in [history] was a disable. */
+        fun leftDisabled(history: List<HistoryEntry>): List<String> =
+            history.filter { it.action == Action.Disable || it.action == Action.Enable }
+                .sortedBy { it.id }
+                .associate { it.packageName to it.action }
+                .filterValues { it == Action.Disable }
+                .keys.sorted()
+    }
+
+    private fun save() {
+        val f = file ?: return
+        f.parentFile?.mkdirs()
+        val lines = baselines.map { (id, pkgs) -> listOf(VERSION, "b", id, pkgs.sorted().joinToString(",")) } +
+            entries.map { e ->
+                listOf(
+                    VERSION, "e", e.deviceId, e.id.toString(), e.at.toString(), e.action.name, e.packageName,
+                    clean(e.label), e.undo?.name.orEmpty(), e.undoneAt?.toString().orEmpty(),
+                )
+            }
+        val tmp = File(f.path + ".tmp")
+        tmp.writeText(lines.joinToString("") { it.joinToString("\t") + "\n" })
+        if (!tmp.renameTo(f)) {
+            f.delete()
+            tmp.renameTo(f)
+        }
+    }
+
+    /** A damaged line costs that line only. */
+    private fun parse(line: String) {
+        val f = line.split('\t')
+        if (f.size < 4 || f[0] != VERSION) return
+        when (f[1]) {
+            "b" -> baselines[f[2]] = f[3].split(',').filter { it.isNotEmpty() }.toSet()
+            "e" -> if (f.size == 10) {
+                entries += HistoryEntry(
+                    id = f[3].toLongOrNull() ?: return,
+                    deviceId = f[2],
+                    at = f[4].toLongOrNull() ?: return,
+                    action = action(f[5]) ?: return,
+                    packageName = f[6],
+                    label = f[7],
+                    undo = action(f[8]),
+                    undoneAt = f[9].toLongOrNull(),
+                )
+            }
+        }
+    }
+
+    private fun action(s: String) = Action.entries.firstOrNull { it.name == s }
+
+    private fun clean(s: String) = s.replace(Regex("[\\t\\r\\n]"), " ")
+}
+
+private const val VERSION = "v1"

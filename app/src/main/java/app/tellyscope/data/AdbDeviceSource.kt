@@ -51,7 +51,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val watchers = ConcurrentHashMap<String, Job>()
     /** Wireless debugging advertises pairing and connect on different ports. */
     private val pairingPorts = ConcurrentHashMap<String, Int>()
-    private var historyId = 0L
+    private val book = HistoryBook(File(appContext.filesDir, "history.tsv"))
 
     init {
         Connector.init(File(appContext.filesDir, "adbkey.pem"))
@@ -247,23 +247,36 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         )
     }
 
-    override suspend fun act(deviceId: String, action: Action, packageName: String): HistoryEntry {
-        val r = Actions(session(deviceId)).run(AdbAction.valueOf(action.name.uppercase()), packageName)
+    override suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long?): HistoryEntry {
+        val shell = session(deviceId)
+        // Before the first change on a TV, note what was already off: Restore must leave those alone.
+        if (!book.hasBaseline(deviceId)) book.setBaseline(deviceId, disabledPackages(deviceId))
+        val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
-            is ActionResult.Done -> HistoryEntry(
-                id = ++historyId,
+            is ActionResult.Done -> book.record(
                 deviceId = deviceId,
                 at = System.currentTimeMillis(),
                 action = action,
                 packageName = packageName,
                 label = humanise(packageName),
                 undo = r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                undoneAt = null,
+                undoing = undoing,
             )
             is ActionResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is ActionResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
     }
+
+    override suspend fun history(deviceId: String): List<HistoryEntry> = book.entries(deviceId)
+
+    override suspend fun restoreAll(deviceId: String): List<HistoryEntry> {
+        // Only what is still off now: the user may have turned some back on from the TV itself.
+        val off = disabledPackages(deviceId)
+        return book.restorable(deviceId).filter { it in off }.map { act(deviceId, Action.Enable, it) }
+    }
+
+    private suspend fun disabledPackages(deviceId: String) =
+        Parsers.packages(session(deviceId).shell("pm list packages -d").output).map { it.name }.toSet()
 
     private fun session(deviceId: String) =
         links[deviceId]?.session ?: throw IllegalStateException("$deviceId is offline")

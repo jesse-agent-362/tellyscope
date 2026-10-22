@@ -36,6 +36,15 @@ interface DeviceSource {
 
     suspend fun network(deviceId: String): NetworkInfo
 
-    /** Runs an action. Never uninstalls: there is no uninstall in [Action] on purpose. */
-    suspend fun act(deviceId: String, action: Action, packageName: String): HistoryEntry
+    /**
+     * Runs an action and records it. Never uninstalls: there is no uninstall in [Action] on
+     * purpose. [undoing] is the history entry this reverses, which gets marked undone.
+     */
+    suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long? = null): HistoryEntry
+
+    /** Everything Tellyscope changed on this TV, newest first. Survives app restarts. */
+    suspend fun history(deviceId: String): List<HistoryEntry>
+
+    /** Turns back on every app Tellyscope disabled, and nothing that was off before. */
+    suspend fun restoreAll(deviceId: String): List<HistoryEntry>
 }

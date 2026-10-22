@@ -65,6 +65,9 @@ data class UiState(
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
 
+/** [DeviceUi.busy] value while "Restore everything" runs. */
+const val RESTORING = "restore"
+
 class TellyscopeViewModel(
     private val source: DeviceSource,
     private val allowTimeoutMs: Long = 60_000,
@@ -78,9 +81,9 @@ class TellyscopeViewModel(
     private val _done = MutableStateFlow<HistoryEntry?>(null)
     val done: StateFlow<HistoryEntry?> = _done.asStateFlow()
 
-    /** One-shot failures for the snackbar: the TV refused, or went away mid-action. */
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    /** One-shot snackbar lines: the TV refused, went away mid-action, or a restore finished. */
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
 
     private var scanJob: Job? = null
     private var liveJob: Job? = null
@@ -194,6 +197,11 @@ class TellyscopeViewModel(
         mediumJob?.cancel()
         _state.update { it.copy(selectedId = id, device = DeviceUi(), query = "") }
         val device = _state.value.selected ?: return
+        // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
+        viewModelScope.launch {
+            val history = source.history(device.id)
+            _state.update { if (it.selectedId == device.id) it.copy(device = it.device.copy(history = history)) else it }
+        }
         if (device.state != DeviceState.Online) return
         liveJob = viewModelScope.launch {
             source.live(id!!).collect { snap -> _state.update { it.copy(device = it.device.copy(snapshot = snap)) } }
@@ -269,19 +277,17 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             // The source throws with the user-facing reason when the TV refuses.
             val (entry, apps) = try {
-                source.act(id, action, pkg) to source.apps(id)
+                source.act(id, action, pkg, undoing) to source.apps(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // Anything else (a dropped socket) still must not crash the app.
                 _state.update { it.copy(device = it.device.copy(busy = null)) }
-                _error.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+                _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
                 return@launch
             }
-            _state.update { s ->
-                val history = s.device.history.map { if (it.id == undoing) it.copy(undoneAt = entry.at) else it }
-                s.copy(device = s.device.copy(apps = apps, busy = null, history = listOf(entry) + history))
-            }
+            val history = source.history(id)
+            _state.update { s -> s.copy(device = s.device.copy(apps = apps, busy = null, history = history)) }
             if (undoing == null) _done.value = entry
         }
     }
@@ -290,8 +296,29 @@ class TellyscopeViewModel(
         _done.value = null
     }
 
-    fun errorShown() {
-        _error.value = null
+    fun noticeShown() {
+        _notice.value = null
+    }
+
+    /** Turns back on everything Tellyscope disabled on the selected TV. */
+    fun restoreAll() {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(busy = RESTORING)) }
+        viewModelScope.launch {
+            _notice.value = try {
+                val n = source.restoreAll(id).size
+                if (n == 0) "Nothing to turn back on." else "Turned $n ${if (n == 1) "app" else "apps"} back on."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+            }
+            val apps = runCatching { source.apps(id) }.getOrNull()
+            val history = source.history(id)
+            _state.update { s ->
+                s.copy(device = s.device.copy(apps = apps ?: s.device.apps, busy = null, history = history))
+            }
+        }
     }
 
     private fun setRow(ip: String, row: RowState) =

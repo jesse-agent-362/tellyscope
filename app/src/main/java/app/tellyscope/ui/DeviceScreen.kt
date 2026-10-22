@@ -71,6 +71,7 @@ import app.tellyscope.data.Action
 import app.tellyscope.data.AppInfo
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
+import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.Proc
@@ -89,6 +90,7 @@ data class DeviceActions(
     val undo: (HistoryEntry) -> Unit = {},
     val reconnect: () -> Unit = {},
     val forget: (String) -> Unit = {},
+    val restoreAll: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -184,7 +186,7 @@ fun DeviceScreen(
                 ui.network?.let { NetworkBlock(it, q) }
             }
             section("history", "History", ui.history.size) {
-                HistoryList(ui.history, state.now, actions.undo)
+                HistoryList(ui.history, state.now, actions.undo, restoring = ui.busy == RESTORING, onRestoreAll = actions.restoreAll)
             }
         }
     }
@@ -241,6 +243,23 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
             )
         }
     }
+}
+
+/** Restore only touches what Tellyscope turned off; the dialog says so before anything runs. */
+@Composable
+fun RestoreDialog(count: Int, onRestore: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Turn $count ${if (count == 1) "app" else "apps"} back on?") },
+        text = {
+            Text(
+                "Turns back on every app Tellyscope disabled on this TV. " +
+                    "Apps that were already off before Tellyscope's first change stay off.",
+            )
+        },
+        confirmButton = { Button(onClick = onRestore) { Text("Turn back on") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 private fun name(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
@@ -552,7 +571,21 @@ private fun KeyValue(k: String, v: String) {
 }
 
 @Composable
-private fun HistoryList(history: List<HistoryEntry>, now: Long, onUndo: (HistoryEntry) -> Unit) {
+private fun HistoryList(
+    history: List<HistoryEntry>,
+    now: Long,
+    onUndo: (HistoryEntry) -> Unit,
+    restoring: Boolean = false,
+    onRestoreAll: () -> Unit = {},
+) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    val off = HistoryBook.leftDisabled(history).size
+    if (confirming) RestoreDialog(off, onRestore = { confirming = false; onRestoreAll() }, onDismiss = { confirming = false })
+    if (off > 0) {
+        OutlinedButton(onClick = { confirming = true }, enabled = !restoring) {
+            Text(if (restoring) "Turning apps back on…" else "Restore everything ($off)")
+        }
+    }
     if (history.isEmpty()) {
         Text(
             "Nothing changed yet. Anything you stop, disable or turn on shows up here, with a way to undo it.",

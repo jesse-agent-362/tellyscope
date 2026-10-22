@@ -4,7 +4,10 @@ package app.tellyscope
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import app.tellyscope.data.Action
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
@@ -17,6 +20,7 @@ import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceScreen
 import app.tellyscope.ui.DeviceUi
 import app.tellyscope.ui.ForgetDialog
+import app.tellyscope.ui.RestoreDialog
 import app.tellyscope.ui.PermissionScreen
 import app.tellyscope.ui.RowState
 import app.tellyscope.ui.ScanScreen
@@ -53,11 +57,13 @@ class ScreenshotTest {
     private val chromecast = ScanHit("192.168.1.57", 37211, ScanKind.Wireless, "chromecast", "Google")
     private val unknown = ScanHit("192.168.1.88", 5555, ScanKind.Classic, null, null)
 
-    private fun shot(name: String, dark: Boolean = false, content: @Composable () -> Unit) {
+    private fun shot(name: String, dark: Boolean = false, before: () -> Unit = {}, content: @Composable () -> Unit) {
         // Expressive indicators animate forever, so the clock never idles on its own:
         // drive it by hand and capture a fixed frame.
         compose.mainClock.autoAdvance = false
         compose.setContent { TellyscopeTheme(dark = dark, dynamic = false) { content() } }
+        compose.mainClock.advanceTimeBy(1_000)
+        before()
         compose.mainClock.advanceTimeBy(1_000)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/${name}${if (dark) "_dark" else ""}.png")
     }
@@ -134,7 +140,12 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 40_000, Action.Disable, "com.xgimi.ota", "XGIMI Updates", Action.Enable, null),
             HistoryEntry(1, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, now - 4 * 60_000),
         )
-        shot("07_device_history") { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+        val openHistory = {
+            compose.onNodeWithText("Apps").performClick() // fold the long list away
+            compose.onNodeWithText("History").performScrollTo().performClick()
+            Unit
+        }
+        shot("07_device_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
     }
 
     @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }
@@ -155,4 +166,6 @@ class ScreenshotTest {
             DeviceScreen(base.copy(devices = base.devices.dropLast(1) + off, selectedId = off.id, device = DeviceUi()), DeviceActions())
         }
     }
+
+    @Test fun restore() = shot("11_restore") { RestoreDialog(2, {}, {}) }
 }

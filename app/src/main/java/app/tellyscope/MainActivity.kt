@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
 fun TellyscopeApp(vm: TellyscopeViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val done by vm.done.collectAsStateWithLifecycle()
-    val error by vm.error.collectAsStateWithLifecycle()
+    val notice by vm.notice.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var adding by rememberSaveable { mutableStateOf(false) }
 
@@ -127,9 +127,9 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         if (result == SnackbarResult.ActionPerformed) vm.undo(entry)
     }
 
-    LaunchedEffect(error) {
-        val message = error ?: return@LaunchedEffect
-        vm.errorShown()
+    LaunchedEffect(notice) {
+        val message = notice ?: return@LaunchedEffect
+        vm.noticeShown()
         snackbar.showSnackbar(message, duration = SnackbarDuration.Long)
     }
 
@@ -163,6 +163,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 undo = vm::undo,
                 reconnect = { state.selectedId?.let(vm::reconnect) },
                 forget = vm::forget,
+                restoreAll = vm::restoreAll,
             ),
         )
     }

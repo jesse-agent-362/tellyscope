@@ -41,7 +41,7 @@ class FakeDeviceSource(
     )
 
     private val apps = mutableMapOf<String, MutableList<AppInfo>>()
-    private var nextHistoryId = 1L
+    private val book = HistoryBook()
 
     override fun scan(): Flow<ScanEvent> = flow {
         val subnet = "192.168.1.0/24"
@@ -162,9 +162,10 @@ class FakeDeviceSource(
         ),
     )
 
-    override suspend fun act(deviceId: String, action: Action, packageName: String): HistoryEntry {
+    override suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long?): HistoryEntry {
         delay(400)
         val list = appsFor(deviceId)
+        if (!book.hasBaseline(deviceId)) book.setBaseline(deviceId, list.filter { !it.enabled }.map { it.packageName }.toSet())
         val i = list.indexOfFirst { it.packageName == packageName }
         val app = list[i]
         when (action) {
@@ -178,7 +179,14 @@ class FakeDeviceSource(
             Action.Enable -> Action.Disable
             Action.Open -> null
         }
-        return HistoryEntry(nextHistoryId++, deviceId, clock(), action, packageName, app.label, undo, null)
+        return book.record(deviceId, clock(), action, packageName, app.label, undo, undoing)
+    }
+
+    override suspend fun history(deviceId: String): List<HistoryEntry> = book.entries(deviceId)
+
+    override suspend fun restoreAll(deviceId: String): List<HistoryEntry> {
+        val off = appsFor(deviceId).filter { !it.enabled }.map { it.packageName }.toSet()
+        return book.restorable(deviceId).filter { it in off }.map { act(deviceId, Action.Enable, it) }
     }
 
     private companion object {
