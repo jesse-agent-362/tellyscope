@@ -15,12 +15,34 @@ android {
         // phones in use. Kadb needs 23; the TV side has its own floor (wireless debugging is 11+).
         minSdk = 26
         targetSdk = 37
+        // A PR into main must raise both past the latest v* tag (.github/workflows/release-check.yml).
         versionCode = 1
         versionName = "0.0.1"
+
+        // The rolling alpha (release.yml, on dev) passes -Ptellyscope.alpha=<run number>:
+        // a separate app ID, so it installs next to the release.
+        providers.gradleProperty("tellyscope.alpha").orNull?.let { run ->
+            applicationIdSuffix = ".alpha"
+            versionNameSuffix = "-alpha.$run"
+        }
+    }
+
+    // Only CI signs, from repo secrets; without RELEASE_KEYSTORE the release APK is unsigned.
+    val keystore = providers.environmentVariable("RELEASE_KEYSTORE").orNull
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").get()
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

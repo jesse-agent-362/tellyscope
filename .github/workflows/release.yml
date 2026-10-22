@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Rolling alpha: every push to dev replaces the `alpha` pre-release.
+  # app.tellyscope.alpha installs next to the release build.
+  alpha:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the tags
+
+      # JDK 25: Kadb ships Java 25 bytecode.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::Repo secret RELEASE_KEYSTORE_BASE64 is not set; see CONTRIBUTING.md#releases"
+            exit 1
+          fi
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build
+        env:
+          RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease -Ptellyscope.alpha=${{ github.run_number }} --console=plain
+
+      - name: Alpha pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN: ${{ github.run_number }}
+        run: |
+          V="$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)-alpha.$RUN"
+          APK="Tellyscope-alpha.apk"  # fixed name, so the download link never changes
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          {
+            echo "Alpha build $V from \`${GITHUB_SHA::7}\` on dev. Untested and may break; it installs as a separate app, \`app.tellyscope.alpha\`."
+            echo
+            echo "### Commits since ${PREV:-the first commit}"
+            echo
+            git log --no-merges --pretty='- %s (%h)' ${PREV:+"$PREV.."}HEAD
+          } > notes.md
+          gh release delete alpha --cleanup-tag --yes || true
+          gh release create alpha "$APK" --prerelease --target "$GITHUB_SHA" \
+            --title "Tellyscope $V" --notes-file notes.md
+
+  # Prod: a merge into main tags vX.Y.Z from versionName and publishes the
+  # signed APK. release-check.yml has already made sure the version is new.
+  prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the tags
+
+      - name: Version
+        id: version
+        run: |
+          V=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            echo "::notice::v$V is already released; nothing to do"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v6
+        if: steps.version.outputs.new == 'true'
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.version.outputs.new == 'true'
+
+      - name: Keystore
+        if: steps.version.outputs.new == 'true'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::Repo secret RELEASE_KEYSTORE_BASE64 is not set; see CONTRIBUTING.md#releases"
+            exit 1
+          fi
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build
+        if: steps.version.outputs.new == 'true'
+        env:
+          RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --console=plain
+
+      # Notes: the version's CHANGELOG.md section, then every commit since the
+      # previous tag.
+      - name: Tag and release
+        if: steps.version.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          awk -v v="$V" '
+            /^## / { if (on) exit; h = $0; sub(/^## v?/, "", h); split(h, a, /[ \t]/); on = (a[1] == v); next }
+            on
+          ' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Commits since ${PREV:-the first commit}"
+            echo
+            git log --no-merges --pretty='- %s (%h)' ${PREV:+"$PREV.."}HEAD
+          } >> notes.md
+          APK="Tellyscope-$V.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          git tag "v$V"
+          git push origin "v$V"
+          gh release create "v$V" "$APK" --title "Tellyscope $V" --notes-file notes.md --verify-tag
