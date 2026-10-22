@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+package app.tellyscope.data
+
+import kotlin.random.Random
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
+
+/**
+ * Stand-in [DeviceSource] for building the screens before the ADB module exists.
+ * [Scenario] switches between the flows worth looking at.
+ */
+class FakeDeviceSource(
+    private val scenario: Scenario = Scenario.Normal,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val random: Random = Random.Default,
+) : DeviceSource {
+
+    enum class Scenario {
+        Normal,
+        /** Scan finds nothing: the brand guide. */
+        Empty,
+        /** The TV never answers the Allow prompt. */
+        NoAllow,
+    }
+
+    private val hits = listOf(
+        ScanHit("192.168.1.23", 5555, ScanKind.Classic, "xgimi-projector", "XGIMI"),
+        ScanHit("192.168.1.41", 5555, ScanKind.Classic, "android-7f3a", "Amlogic"),
+        ScanHit("192.168.1.57", 37211, ScanKind.Wireless, "chromecast", "Google"),
+        ScanHit("192.168.1.88", 5555, ScanKind.Classic, null, null),
+    )
+
+    private val models = mapOf(
+        "XGIMI" to Triple("XGIMI Horizon Pro", "XGIMI", "11"),
+        "Amlogic" to Triple("X96 Max", "Amlogic", "9"),
+        "Google" to Triple("Chromecast with Google TV", "Google", "12"),
+    )
+
+    private val apps = mutableMapOf<String, MutableList<AppInfo>>()
+    private var nextHistoryId = 1L
+
+    override fun scan(): Flow<ScanEvent> = flow {
+        val subnet = "192.168.1.0/24"
+        val pending = if (scenario == Scenario.Empty) ArrayDeque() else ArrayDeque(hits)
+        var probed = 0
+        while (probed < 254) {
+            delay(120)
+            probed = minOf(254, probed + 23)
+            emit(ScanEvent.Progress(ScanProgress(probed, 254, subnet)))
+            if (pending.isNotEmpty() && random.nextFloat() < 0.45f) emit(ScanEvent.Found(pending.removeFirst()))
+        }
+        pending.forEach { emit(ScanEvent.Found(it)) }
+        emit(ScanEvent.Done)
+    }
+
+    override suspend fun connect(hit: ScanHit): ConnectResult {
+        if (scenario == Scenario.NoAllow) {
+            delay(Long.MAX_VALUE)
+        }
+        if (hit.kind == ScanKind.Wireless) {
+            delay(300)
+            return ConnectResult.NeedsPairing
+        }
+        delay(3_200) // the user finding the remote and pressing Allow
+        return ConnectResult.Online(device(hit))
+    }
+
+    override suspend fun pair(hit: ScanHit, code: String): ConnectResult {
+        delay(800)
+        if (!code.matches(Regex("\\d{6}"))) {
+            return ConnectResult.WrongCode("that code didn't work. codes change each time the box opens; check the tv and try again.")
+        }
+        return ConnectResult.Online(device(hit))
+    }
+
+    override suspend fun known(): List<Device> = listOf(
+        Device(
+            id = "192.168.1.64",
+            hit = ScanHit("192.168.1.64", 5555, ScanKind.Classic, "bedroom-firetv", "Amazon"),
+            state = DeviceState.Offline,
+            model = "Fire TV Stick 4K",
+            manufacturer = "Amazon",
+            android = "9",
+            lastSeen = clock() - 14 * 60_000,
+        ),
+    )
+
+    private fun device(hit: ScanHit): Device {
+        val (model, maker, android) = models[hit.maker] ?: Triple("Android TV box", hit.maker, "10")
+        return Device(hit.ip, hit, DeviceState.Online, model, maker, android, clock())
+    }
+
+    override fun live(deviceId: String): Flow<Snapshot> = flow {
+        while (currentCoroutineContext().isActive) {
+            emit(snapshot(deviceId))
+            delay(2_000)
+        }
+    }
+
+    fun snapshot(deviceId: String): Snapshot {
+        val enabled = appsFor(deviceId).filter { it.enabled }.map { it.packageName }.toSet()
+        val procs = baseProcs
+            .filter { it.packageName == null || it.packageName in enabled }
+            .map {
+                it.copy(
+                    cpuPercent = (it.cpuPercent + (random.nextDouble() - 0.5) * 3).coerceAtLeast(0.0),
+                    ramMb = (it.ramMb * (0.97 + random.nextDouble() * 0.06)).toInt(),
+                )
+            }
+        return Snapshot(
+            at = clock(),
+            cpuPercent = procs.sumOf { it.cpuPercent }.toInt(),
+            ramUsedMb = procs.sumOf { it.ramMb } + 260,
+            ramTotalMb = 2048,
+            storageUsedGb = 9.8,
+            storageTotalGb = 16.0,
+            tempC = 52 + random.nextInt(-1, 2),
+            uptimeSeconds = 3 * 86_400L + 4 * 3_600L,
+            screenOn = true,
+            procs = procs,
+        )
+    }
+
+    override suspend fun apps(deviceId: String): List<AppInfo> = appsFor(deviceId).toList()
+
+    private fun appsFor(deviceId: String) = apps.getOrPut(deviceId) { baseApps.toMutableList() }
+
+    override suspend fun network(deviceId: String) = NetworkInfo(
+        iface = "wifi",
+        ip = deviceId,
+        mac = "58:d5:0a:3c:91:e2",
+        ssid = "home-5g",
+        rssi = -54 + random.nextInt(-3, 4),
+        linkMbps = 433,
+        sockets = listOf(
+            Socket("YouTube", "youtube.com:443", "established"),
+            Socket("Jellyfin", "192.168.1.10:8096", "established"),
+            Socket("Google Play services", "googleapis.com:443", "established"),
+            Socket("XGIMI Assistant", "xgimi.com:443", "closing"),
+        ),
+        traffic = listOf(
+            AppTraffic("YouTube", 1840, 22),
+            AppTraffic("Jellyfin", 960, 4),
+            AppTraffic("Netflix", 410, 6),
+            AppTraffic("Google Play services", 120, 31),
+            AppTraffic("XGIMI Updates", 64, 1),
+        ),
+    )
+
+    override suspend fun act(deviceId: String, action: Action, packageName: String): HistoryEntry {
+        delay(400)
+        val list = appsFor(deviceId)
+        val i = list.indexOfFirst { it.packageName == packageName }
+        val app = list[i]
+        when (action) {
+            Action.Disable -> list[i] = app.copy(enabled = false)
+            Action.Enable -> list[i] = app.copy(enabled = true)
+            Action.Stop, Action.Open -> Unit
+        }
+        val undo = when (action) {
+            Action.Stop -> Action.Open
+            Action.Disable -> Action.Enable
+            Action.Enable -> Action.Disable
+            Action.Open -> null
+        }
+        return HistoryEntry(nextHistoryId++, deviceId, clock(), action, packageName, app.label, undo, null)
+    }
+
+    private companion object {
+        val baseApps = listOf(
+            AppInfo("com.spocky.projengmenu", "Projectivy Launcher", 0xFF3D5AFE, false, true, "this is your home screen", "4.52"),
+            AppInfo("com.google.android.youtube.tv", "YouTube", 0xFFC4302B, false, true, null, "4.40.303"),
+            AppInfo("com.netflix.ninja", "Netflix", 0xFFB20710, false, true, null, "11.2.0"),
+            AppInfo("org.jellyfin.androidtv", "Jellyfin", 0xFF7B5EA7, false, true, null, "0.17.4"),
+            AppInfo("com.xgimi.assistant", "XGIMI Assistant", null, true, true, null, "2.1.8"),
+            AppInfo("com.xgimi.ota", "XGIMI Updates", null, true, true, null, "1.4.0"),
+            AppInfo("com.google.android.tvrecommendations", "TV Recommendations", null, true, false, null, "1.0"),
+            AppInfo("com.android.systemui", "System UI", null, true, true, "the tv needs this to draw the screen", "11"),
+            AppInfo("com.android.tv.settings", "Settings", null, true, true, "you need this to change tv settings", "11"),
+            AppInfo("com.google.android.gms", "Google Play services", null, true, true, "most apps stop working without it", "24.38"),
+            AppInfo("com.google.android.inputmethod.latin", "Gboard", null, true, true, "you'd lose the on-screen keyboard", "14.1"),
+        )
+
+        val baseProcs = listOf(
+            Proc(412, "surfaceflinger", null, 9.0, 38),
+            Proc(688, "system_server", null, 6.0, 214),
+            Proc(1502, "com.spocky.projengmenu", "com.spocky.projengmenu", 2.0, 312),
+            Proc(2210, "com.google.android.youtube.tv", "com.google.android.youtube.tv", 4.0, 220),
+            Proc(2241, "com.google.android.youtube.tv:service", "com.google.android.youtube.tv", 1.0, 41),
+            Proc(1980, "com.google.android.gms.persistent", "com.google.android.gms", 1.0, 118),
+            Proc(2077, "com.xgimi.assistant", "com.xgimi.assistant", 1.0, 96),
+            Proc(2301, "org.jellyfin.androidtv", "org.jellyfin.androidtv", 0.5, 88),
+            Proc(1440, "com.android.systemui", "com.android.systemui", 1.0, 102),
+            Proc(530, "media.codec", null, 2.0, 22),
+            Proc(2390, "com.xgimi.ota", "com.xgimi.ota", 0.0, 31),
+        )
+    }
+}
