@@ -154,8 +154,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 system = p.name in system,
                 enabled = p.name !in disabled,
                 // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
-                protectedReason = (if (home.isEmpty()) ProtectedReason.UNKNOWN_HOME else Protected.reason(p.name, home))
-                    ?.let(::reasonText),
+                // A disabled app stays unprotected so Enable (always allowed) still shows.
+                protectedReason = when {
+                    home.isNotEmpty() -> Protected.reason(p.name, home)
+                    p.name in disabled -> null
+                    else -> ProtectedReason.UNKNOWN_HOME
+                }?.let(::reasonText),
                 version = "",
             )
         }.sortedBy { it.label.lowercase() }
