@@ -106,7 +106,7 @@ fun ScanScreen(
             }
         }
     }
-    if (adding) AddByIpDialog(onDismiss = { adding = false }, onSubmit = { onAddByIp(it).also { e -> if (e == null) adding = false } })
+    if (adding) AddByIpDialog(subnet = scan.progress?.subnet, onDismiss = { adding = false }, onSubmit = { onAddByIp(it).also { e -> if (e == null) adding = false } })
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -116,7 +116,7 @@ private fun ScanStatus(scan: ScanUi) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (scan.scanning) {
             Text(
-                "Looking for TVs on ${p?.subnet ?: "your Wi-Fi"}…  ${p?.probed ?: 0}/${p?.total ?: 254}",
+                "Looking for TVs on your Wi-Fi…  ${p?.probed ?: 0}/${p?.total ?: 254}",
                 style = MaterialTheme.typography.labelLarge,
             )
             LinearWavyProgressIndicator(
@@ -126,7 +126,7 @@ private fun ScanStatus(scan: ScanUi) {
         } else {
             val n = scan.hits.size
             Text(
-                if (n == 0) "No TVs found yet" else "Found $n ${if (n == 1) "TV" else "TVs"} on ${p?.subnet ?: "your Wi-Fi"}",
+                if (n == 0) "No TVs found yet" else "Found $n ${if (n == 1) "TV" else "TVs"} on your Wi-Fi",
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -179,7 +179,7 @@ private fun HitCard(
                     Column {
                         Text("Check your TV", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "A box saying \"Allow USB debugging?\" is on screen. Tick \"Always allow from this phone\", then press Allow.",
+                            "A box saying \"Allow USB debugging?\" is on screen. Tick \"Always allow from this computer\", then press Allow.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
@@ -226,7 +226,7 @@ private fun HitCard(
 }
 
 @Composable
-private fun AddByIpDialog(onDismiss: () -> Unit, onSubmit: (String) -> String?) {
+private fun AddByIpDialog(subnet: String?, onDismiss: () -> Unit, onSubmit: (String) -> String?) {
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -235,6 +235,8 @@ private fun AddByIpDialog(onDismiss: () -> Unit, onSubmit: (String) -> String?) 
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Find it on the TV under Settings → Network → your Wi-Fi.")
+                // The scan screen says "your Wi-Fi"; the range is only useful here, while typing.
+                if (subnet != null) Text("Your Wi-Fi: $subnet", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it; error = null },

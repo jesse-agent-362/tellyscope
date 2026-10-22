@@ -16,6 +16,7 @@ import app.tellyscope.data.ScanEvent
 import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Snapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +75,10 @@ class TellyscopeViewModel(
     /** One-shot "done, undo?" messages for the snackbar. */
     private val _done = MutableStateFlow<HistoryEntry?>(null)
     val done: StateFlow<HistoryEntry?> = _done.asStateFlow()
+
+    /** One-shot failures for the snackbar: the TV refused, or went away mid-action. */
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
 
     private var scanJob: Job? = null
     private var liveJob: Job? = null
@@ -184,11 +189,18 @@ class TellyscopeViewModel(
             source.live(id!!).collect { snap -> _state.update { it.copy(device = it.device.copy(snapshot = snap)) } }
         }
         mediumJob = viewModelScope.launch {
-            _state.update { it.copy(device = it.device.copy(apps = source.apps(id!!))) }
-            while (true) {
-                val net = source.network(id!!)
-                _state.update { it.copy(device = it.device.copy(network = net)) }
-                delay(10_000)
+            // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
+            try {
+                _state.update { it.copy(device = it.device.copy(apps = source.apps(id!!))) }
+                while (true) {
+                    val net = source.network(id!!)
+                    _state.update { it.copy(device = it.device.copy(network = net)) }
+                    delay(10_000)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Nothing to show: the stats stop and the offline card explains.
             }
         }
     }
@@ -217,8 +229,17 @@ class TellyscopeViewModel(
         val id = _state.value.selectedId ?: return
         _state.update { it.copy(device = it.device.copy(pending = null, busy = pkg)) }
         viewModelScope.launch {
-            val entry = source.act(id, action, pkg)
-            val apps = source.apps(id)
+            // The source throws with the user-facing reason when the TV refuses.
+            val (entry, apps) = try {
+                source.act(id, action, pkg) to source.apps(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Anything else (a dropped socket) still must not crash the app.
+                _state.update { it.copy(device = it.device.copy(busy = null)) }
+                _error.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+                return@launch
+            }
             _state.update { s ->
                 val history = s.device.history.map { if (it.id == undoing) it.copy(undoneAt = entry.at) else it }
                 s.copy(device = s.device.copy(apps = apps, busy = null, history = listOf(entry) + history))
@@ -229,6 +250,10 @@ class TellyscopeViewModel(
 
     fun doneShown() {
         _done.value = null
+    }
+
+    fun errorShown() {
+        _error.value = null
     }
 
     private fun setRow(ip: String, row: RowState) =

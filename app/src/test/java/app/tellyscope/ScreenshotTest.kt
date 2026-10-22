@@ -16,6 +16,7 @@ import app.tellyscope.data.ScanProgress
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceScreen
 import app.tellyscope.ui.DeviceUi
+import app.tellyscope.ui.PermissionScreen
 import app.tellyscope.ui.RowState
 import app.tellyscope.ui.ScanScreen
 import app.tellyscope.ui.ScanUi
@@ -134,4 +135,8 @@ class ScreenshotTest {
         )
         shot("07_device_history") { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
     }
+
+    @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, {}, {}) }
+
+    @Test fun permission_denied() = shot("08_permission_denied") { PermissionScreen(denied = true, {}, {}) }
 }

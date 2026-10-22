@@ -72,7 +72,7 @@ class FakeDeviceSource(
     override suspend fun pair(hit: ScanHit, code: String): ConnectResult {
         delay(800)
         if (!code.matches(Regex("\\d{6}"))) {
-            return ConnectResult.WrongCode("that code didn't work. codes change each time the box opens; check the tv and try again.")
+            return ConnectResult.WrongCode("that code didn't work. codes change each time the box opens; check the TV and try again.")
         }
         return ConnectResult.Online(device(hit))
     }
@@ -179,8 +179,8 @@ class FakeDeviceSource(
             AppInfo("com.xgimi.assistant", "XGIMI Assistant", null, true, true, null, "2.1.8"),
             AppInfo("com.xgimi.ota", "XGIMI Updates", null, true, true, null, "1.4.0"),
             AppInfo("com.google.android.tvrecommendations", "TV Recommendations", null, true, false, null, "1.0"),
-            AppInfo("com.android.systemui", "System UI", null, true, true, "the tv needs this to draw the screen", "11"),
-            AppInfo("com.android.tv.settings", "Settings", null, true, true, "you need this to change tv settings", "11"),
+            AppInfo("com.android.systemui", "System UI", null, true, true, "the TV needs this to draw the screen", "11"),
+            AppInfo("com.android.tv.settings", "Settings", null, true, true, "you need this to change TV settings", "11"),
             AppInfo("com.google.android.gms", "Google Play services", null, true, true, "most apps stop working without it", "24.38"),
             AppInfo("com.google.android.inputmethod.latin", "Gboard", null, true, true, "you'd lose the on-screen keyboard", "14.1"),
         )

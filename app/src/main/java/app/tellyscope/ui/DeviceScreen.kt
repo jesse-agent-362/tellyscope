@@ -152,7 +152,8 @@ fun DeviceScreen(
             if (offline) item { OfflineCard(device, state.now, actions.reconnect) }
             item { StatGrid(ui.snapshot, Modifier.alpha(if (offline) 0.4f else 1f)) }
             ui.snapshot?.let { snap ->
-                if (q.isEmpty()) item { UsageCard(snap, ui.apps) }
+                // The :adb source has no per-process list yet; no bars beats an empty card.
+                if (q.isEmpty() && snap.procs.isNotEmpty()) item { UsageCard(snap, ui.apps) }
             }
             section(
                 key = "apps",
@@ -313,11 +314,13 @@ private fun Bars(rows: List<Pair<String, Double>>, fmt: (Double) -> String, top:
     shown.forEach { (name, v) ->
         val frac by animateFloatAsState((v / max).toFloat(), MaterialTheme.motionScheme.defaultSpatialSpec(), label = "bar")
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(name, Modifier.width(120.dp), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Long app names wrap to two lines rather than cut off; the value column only needs "1.2 GB".
+            Text(name, Modifier.width(148.dp), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(8.dp))
             Box(Modifier.weight(1f).height(12.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.primary))
             }
-            Text(fmt(v), Modifier.width(72.dp), style = SmallNumber, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            Text(fmt(v), Modifier.width(60.dp), style = SmallNumber, textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
     }
 }
