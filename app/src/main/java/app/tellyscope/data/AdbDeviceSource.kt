@@ -15,6 +15,7 @@ import app.tellyscope.adb.Protected
 import app.tellyscope.adb.ProtectedReason
 import com.flyfishxu.kadb.exception.AdbPairAuthException
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +50,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     /** Remembered TVs that haven't answered since launch: shown offline, not "connecting". */
     private val restoring = ConcurrentHashMap.newKeySet<String>()
     private val watchers = ConcurrentHashMap<String, Job>()
+    /** Address → [historyKey], so history follows a TV across DHCP changes. */
+    private val keys = ConcurrentHashMap<String, String>()
     /** Wireless debugging advertises pairing and connect on different ports. */
     private val pairingPorts = ConcurrentHashMap<String, Int>()
     private val book = HistoryBook(File(appContext.filesDir, "history.tsv"))
@@ -61,6 +64,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val restored = scope.async(Dispatchers.IO) {
         store.load().forEach { d ->
             saved[d.host] = d
+            d.historyKey?.let { keys[d.host] = it }
             hits[d.host] = ScanHit(d.host, d.port, d.kind, d.name, null)
             restoring += d.host
             link(d.host, d.port, first = null, knownGood = true)
@@ -76,7 +80,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         links.put(host, link)?.disconnect()
         watchers.put(host, scope.launch {
             link.state.collect { st ->
-                if (st == AdbState.ONLINE) restoring -= host
+                if (st == AdbState.ONLINE) {
+                    restoring -= host
+                    // Read again on every connect: a new TV may have taken over a saved address.
+                    launch { readKey(host) }
+                }
                 if (st == AdbState.ONLINE || st == AdbState.OFFLINE) remember(host)
             }
         })?.cancel()
@@ -94,6 +102,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             name = hit.hostname,
             model = link.stats.value?.model ?: old?.model,
             lastSeen = link.lastSeenMillis ?: old?.lastSeen ?: System.currentTimeMillis(),
+            historyKey = keys[host] ?: old?.historyKey,
         )
         persist()
     }
@@ -250,11 +259,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long?): HistoryEntry {
         val shell = session(deviceId)
         // Before the first change on a TV, note what was already off: Restore must leave those alone.
-        if (!book.hasBaseline(deviceId)) book.setBaseline(deviceId, disabledPackages(deviceId))
+        val key = key(deviceId)
+        if (!book.hasBaseline(key)) book.setBaseline(key, disabledPackages(deviceId))
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
             is ActionResult.Done -> book.record(
-                deviceId = deviceId,
+                deviceId = key,
                 at = System.currentTimeMillis(),
                 action = action,
                 packageName = packageName,
@@ -267,12 +277,39 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         }
     }
 
-    override suspend fun history(deviceId: String): List<HistoryEntry> = book.entries(deviceId)
+    override suspend fun history(deviceId: String): List<HistoryEntry> = book.entries(key(deviceId))
 
     override suspend fun restoreAll(deviceId: String): List<HistoryEntry> {
         // Only what is still off now: the user may have turned some back on from the TV itself.
         val off = disabledPackages(deviceId)
-        return book.restorable(deviceId).filter { it in off }.map { act(deviceId, Action.Enable, it) }
+        val key = key(deviceId)
+        return restoreEach(book.restorable(key).filter { it in off }) { pkg ->
+            act(deviceId, Action.Enable, pkg, undoing = book.openDisable(key, pkg))
+        }
+    }
+
+    /**
+     * The history key for a TV, read from it once connected and saved with it. Until it has
+     * answered (offline since install) the address stands in, and that history moves over when
+     * the key is learned.
+     */
+    private suspend fun key(deviceId: String): String = keys[deviceId] ?: readKey(deviceId)
+
+    private suspend fun readKey(deviceId: String): String {
+        val shell = links[deviceId]?.session ?: return keys[deviceId] ?: deviceId
+        suspend fun prop(cmd: String) = shell.shell(cmd).takeIf { it.exitCode == 0 }?.output
+        val key = try {
+            historyKey(prop("getprop ro.serialno"), prop("settings get secure android_id"), deviceId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return keys[deviceId] ?: deviceId
+        }
+        if (keys.put(deviceId, key) != key) {
+            book.rekey(deviceId, key)
+            remember(deviceId)
+        }
+        return key
     }
 
     private suspend fun disabledPackages(deviceId: String) =

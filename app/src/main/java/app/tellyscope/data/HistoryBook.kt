@@ -62,6 +62,25 @@ class HistoryBook(private val file: File? = null) {
         return leftDisabled(entries.filter { it.deviceId == deviceId }).filter { it !in before }
     }
 
+    /** The newest disable of [packageName] that nothing has undone yet: what Restore reverses. */
+    @Synchronized
+    fun openDisable(deviceId: String, packageName: String): Long? = entries
+        .filter { it.deviceId == deviceId && it.packageName == packageName && it.action == Action.Disable && it.undoneAt == null }
+        .maxOfOrNull { it.id }
+
+    /**
+     * Moves history recorded under [from] (a TV's address, before its serial was known) to [to].
+     * A baseline already under [to] wins: it was taken earlier, before any change.
+     */
+    @Synchronized
+    fun rekey(from: String, to: String) {
+        if (from == to) return
+        var changed = false
+        entries.replaceAll { if (it.deviceId == from) it.copy(deviceId = to).also { changed = true } else it }
+        baselines.remove(from)?.let { old -> baselines.putIfAbsent(to, old); changed = true }
+        if (changed) save()
+    }
+
     companion object {
         /** Packages whose last disable/enable in [history] was a disable. */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
@@ -117,3 +136,38 @@ class HistoryBook(private val file: File? = null) {
 }
 
 private const val VERSION = "v1"
+
+/**
+ * Turns apps back on one at a time and stops at the first refusal, saying how far it got so the
+ * user knows what already changed. [enable] records each step.
+ */
+suspend fun restoreEach(packages: List<String>, enable: suspend (String) -> HistoryEntry): List<HistoryEntry> {
+    val done = mutableListOf<HistoryEntry>()
+    for (pkg in packages) {
+        try {
+            done += enable(pkg)
+        } catch (e: IllegalStateException) {
+            val why = e.message ?: "the TV refused"
+            throw IllegalStateException(
+                if (done.isEmpty()) "couldn't turn apps back on: $why"
+                else "turned ${done.size} ${if (done.size == 1) "app" else "apps"} back on, then stopped: $why",
+                e,
+            )
+        }
+    }
+    return done
+}
+
+/**
+ * Which TV a history belongs to, stable across DHCP changes: the serial number, or the Android ID
+ * when the serial is missing or one of the placeholders cheap boxes ship; the address otherwise.
+ */
+fun historyKey(serial: String?, androidId: String?, address: String): String {
+    val sn = serial?.trim().orEmpty()
+    if (sn.isNotEmpty() && sn.lowercase() !in PLACEHOLDER_SERIALS) return "sn:$sn"
+    val id = androidId?.trim().orEmpty()
+    if (id.isNotEmpty() && id != "null" && id.any { it != '0' }) return "id:$id"
+    return address
+}
+
+private val PLACEHOLDER_SERIALS = setOf("unknown", "0123456789abcdef", "0000000000000000", "123456789", "null")

@@ -12,6 +12,8 @@ data class SavedDevice(
     val name: String?,
     val model: String?,
     val lastSeen: Long?,
+    /** [historyKey] once the TV has answered; null before that. */
+    val historyKey: String? = null,
 )
 
 /**
@@ -39,11 +41,13 @@ class DeviceStore(private val file: File) {
 
     private fun format(d: SavedDevice) = listOf(
         VERSION, d.host, d.port.toString(), d.kind.name, clean(d.name), clean(d.model), d.lastSeen?.toString().orEmpty(),
+        clean(d.historyKey),
     ).joinToString("\t")
 
     private fun parse(line: String): SavedDevice? {
         val f = line.split('\t')
-        if (f.size != 7 || f[0] != VERSION) return null
+        // 7 fields: written before the history key existed.
+        if (f.size !in 7..8 || f[0] != VERSION) return null
         return SavedDevice(
             host = f[1].ifEmpty { return null },
             port = f[2].toIntOrNull() ?: return null,
@@ -51,6 +55,7 @@ class DeviceStore(private val file: File) {
             name = f[4].ifEmpty { null },
             model = f[5].ifEmpty { null },
             lastSeen = f[6].toLongOrNull(),
+            historyKey = f.getOrNull(7)?.ifEmpty { null },
         )
     }
 

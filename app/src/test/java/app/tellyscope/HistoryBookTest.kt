@@ -5,6 +5,9 @@ package app.tellyscope
 import app.tellyscope.data.Action
 import app.tellyscope.data.FakeDeviceSource
 import app.tellyscope.data.HistoryBook
+import app.tellyscope.data.HistoryEntry
+import app.tellyscope.data.historyKey
+import app.tellyscope.data.restoreEach
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -85,5 +88,49 @@ class HistoryBookTest {
         assertTrue(apps.getValue("org.jellyfin.androidtv").enabled)
         assertFalse(apps.getValue("com.google.android.tvrecommendations").enabled)
         assertEquals(emptyList<String>(), source.restoreAll(id).map { it.packageName })
+    }
+
+    @Test fun historyFollowsTheSerialNotTheAddress() {
+        assertEquals("sn:XK03H1234", historyKey(" XK03H1234\n", "a1b2", "tv-1"))
+        // Placeholder serials some boxes ship would mix up every TV of that model.
+        assertEquals("id:a1b2c3", historyKey("0123456789ABCDEF", "a1b2c3", "tv-1"))
+        assertEquals("id:a1b2c3", historyKey("unknown", "a1b2c3\n", "tv-1"))
+        assertEquals("tv-1", historyKey("", "0000000000000000", "tv-1"))
+        assertEquals("tv-1", historyKey(null, null, "tv-1"))
+    }
+
+    @Test fun historyRecordedBeforeTheKeyMovesOverToIt() {
+        val file = tmp.root.resolve("history.tsv")
+        val book = HistoryBook(file)
+        book.setBaseline(tv, setOf("com.old.off"))
+        book.record(tv, 1, Action.Disable, "com.netflix.ninja", "Netflix", Action.Enable)
+        book.rekey(tv, "sn:XK03H1234")
+
+        val after = HistoryBook(file)
+        assertEquals(emptyList<Any>(), after.entries(tv))
+        assertEquals(listOf("com.netflix.ninja"), after.entries("sn:XK03H1234").map { it.packageName })
+        assertEquals(listOf("com.netflix.ninja"), after.restorable("sn:XK03H1234"))
+        assertFalse(after.hasBaseline(tv))
+    }
+
+    @Test fun restoreMarksTheDisablesItReversed() = runTest {
+        val source = FakeDeviceSource()
+        val id = source.known().first().id
+        source.act(id, Action.Disable, "com.netflix.ninja")
+        source.restoreAll(id)
+        val disable = source.history(id).single { it.action == Action.Disable }
+        // Already back on: no Undo left to offer.
+        assertTrue(disable.undoneAt != null)
+    }
+
+    @Test fun aStoppedRestoreSaysHowFarItGot() = runTest {
+        var calls = 0
+        val e = runCatching {
+            restoreEach(listOf("a", "b", "c")) { pkg ->
+                if (++calls == 3) throw IllegalStateException("the TV refused")
+                HistoryEntry(calls.toLong(), tv, 0, Action.Enable, pkg, pkg, Action.Disable, null)
+            }
+        }.exceptionOrNull()
+        assertEquals("turned 2 apps back on, then stopped: the TV refused", e?.message)
     }
 }

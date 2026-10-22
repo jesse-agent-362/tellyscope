@@ -48,4 +48,19 @@ class DeviceStoreTest {
         file.appendText("v1\t192.168.1.88\tnot-a-port\tClassic\t\t\t\n")
         assertEquals(listOf(tv), DeviceStore(file).load())
     }
+
+    @Test fun keepsTheHistoryKey() {
+        val file = tmp.root.resolve("devices.tsv")
+        DeviceStore(file).save(listOf(tv.copy(historyKey = "sn:XK03H1234")))
+        assertEquals(listOf(tv.copy(historyKey = "sn:XK03H1234")), DeviceStore(file).load())
+    }
+
+    @Test fun readsFilesFromBeforeTheHistoryKey() {
+        val file = tmp.root.resolve("devices.tsv")
+        DeviceStore(file).save(listOf(tv))
+        // The older format had no eighth field at all.
+        file.writeText(file.readText().replace("\t\n", "\n"))
+        assertEquals(7, file.readLines().single().split('\t').size)
+        assertEquals(listOf(tv), DeviceStore(file).load())
+    }
 }

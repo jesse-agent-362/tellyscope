@@ -186,7 +186,9 @@ class FakeDeviceSource(
 
     override suspend fun restoreAll(deviceId: String): List<HistoryEntry> {
         val off = appsFor(deviceId).filter { !it.enabled }.map { it.packageName }.toSet()
-        return book.restorable(deviceId).filter { it in off }.map { act(deviceId, Action.Enable, it) }
+        return restoreEach(book.restorable(deviceId).filter { it in off }) { pkg ->
+            act(deviceId, Action.Enable, pkg, undoing = book.openDisable(deviceId, pkg))
+        }
     }
 
     private companion object {
