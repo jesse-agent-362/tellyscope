@@ -183,6 +183,8 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 pickFile = { folder -> vm.folder(folder); pickFile.launch(arrayOf("*/*")) },
                 saveFile = { f -> vm.saving(f); saveFile.launch(f.name) },
                 cancelTransfer = vm::cancelTransfer,
+                pickList = vm::pickList,
+                disableSuggested = vm::disableSuggested,
             ),
         )
     }

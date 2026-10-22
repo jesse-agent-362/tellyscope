@@ -79,4 +79,13 @@ interface DeviceSource {
     suspend fun push(deviceId: String, folder: TvFolder, name: String, size: Long?, source: Source, onProgress: (Progress) -> Unit): String
 
     suspend fun pull(deviceId: String, folder: TvFolder, file: TvFile, sink: Sink, onProgress: (Progress) -> Unit)
+
+    /**
+     * What the TV's list from tellyscope-devices suggests turning off. Never throws; offline it
+     * uses the cached lists, or answers [Suggestions.Unavailable].
+     */
+    suspend fun suggestions(deviceId: String): Suggestions
+
+    /** "Pick your TV": use list [listId] for this TV from now on. */
+    suspend fun pickList(deviceId: String, listId: String)
 }

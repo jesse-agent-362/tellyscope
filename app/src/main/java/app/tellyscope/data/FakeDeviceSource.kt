@@ -264,7 +264,31 @@ class FakeDeviceSource(
         TvFile("subtitles.srt", 61_000, clock() - 40 * 60_000L),
     )
 
+    override suspend fun suggestions(deviceId: String): Suggestions {
+        delay(600)
+        val all = listOf(ListEntry(fakeList.id, fakeList.name, null, fakeList.sdk, "devices/${fakeList.id}.json", "0".repeat(64)))
+        return Suggestions.Ready(null, fakeList, 30, suggest(fakeList, appsFor(deviceId), 30), all)
+    }
+
+    override suspend fun pickList(deviceId: String, listId: String) = Unit
+
     private companion object {
+        val fakeList = DeviceList(
+            id = "xgimi-horizon-pro",
+            name = "XGIMI Horizon Pro",
+            testedOs = "Android TV 11",
+            sdk = 30,
+            keep = emptySet(),
+            groups = listOf(
+                ListGroup("Extras", listOf(
+                    ListPackage("com.xgimi.assistant", "voice assistant", optional = false),
+                    ListPackage("com.google.android.tvrecommendations", null, optional = false),
+                    ListPackage("com.netflix.ninja", null, optional = true),
+                )),
+            ),
+        )
+
+
         val baseApps = listOf(
             AppInfo("com.spocky.projengmenu", "Projectivy Launcher", 0xFF3D5AFE, false, true, "this is your home screen", "4.52"),
             AppInfo("com.google.android.youtube.tv", "YouTube", 0xFFC4302B, false, true, null, "4.40.303"),

@@ -27,6 +27,7 @@ import app.tellyscope.data.ScanEvent
 import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Snapshot
+import app.tellyscope.data.Suggestions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -68,6 +69,8 @@ data class DeviceUi(
     val files: FilesUi = FilesUi(),
     /** A file copy in progress; its dialog stays up until it finishes or Cancel is tapped. */
     val transfer: TransferUi? = null,
+    /** The TV's debloat list; null while it loads. */
+    val lists: Suggestions? = null,
 )
 
 data class SideloadUi(
@@ -111,6 +114,9 @@ data class UiState(
 /** [DeviceUi.busy] value while "Restore everything" runs. */
 const val RESTORING = "restore"
 
+/** [DeviceUi.busy] value while the ticked suggestions are being disabled. */
+const val DISABLING = "lists"
+
 class TellyscopeViewModel(
     private val source: DeviceSource,
     private val storage: PhoneStorage? = null,
@@ -137,6 +143,7 @@ class TellyscopeViewModel(
     private var transferJob: Job? = null
     private var liveJob: Job? = null
     private var mediumJob: Job? = null
+    private var listsJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -244,6 +251,7 @@ class TellyscopeViewModel(
     fun select(id: String?) {
         liveJob?.cancel()
         mediumJob?.cancel()
+        listsJob?.cancel()
         _state.update { it.copy(selectedId = id, device = DeviceUi(snapshot = id?.let(lastSnapshot::get)), query = "") }
         val device = _state.value.selected ?: return
         // History lives on the phone, so it shows (and undo is offered) even while the TV is off.
@@ -258,6 +266,8 @@ class TellyscopeViewModel(
                 _state.update { it.copy(device = it.device.copy(snapshot = snap)) }
             }
         }
+        // Its own job: the list download never holds up apps or stats.
+        listsJob = viewModelScope.launch { loadLists(id!!) }
         mediumJob = viewModelScope.launch {
             // A TV that drops mid-read throws; the live flow ends and the offline card takes over.
             try {
@@ -546,6 +556,52 @@ class TellyscopeViewModel(
             _state.update { s ->
                 s.copy(device = s.device.copy(apps = apps ?: s.device.apps, busy = null, history = history))
             }
+        }
+    }
+
+    private suspend fun loadLists(id: String) {
+        val lists = source.suggestions(id)
+        // Once the list is known its keep entries show as protected.
+        val apps = if (lists is Suggestions.Ready) runCatching { source.apps(id) }.getOrNull() else null
+        _state.update { s ->
+            if (s.selectedId != id) s else s.copy(device = s.device.copy(lists = lists, apps = apps ?: s.device.apps))
+        }
+    }
+
+    /** "Pick your TV": remember the choice for this TV and show its list. */
+    fun pickList(listId: String) {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(lists = null)) }
+        listsJob?.cancel()
+        listsJob = viewModelScope.launch {
+            source.pickList(id, listId)
+            loadLists(id)
+        }
+    }
+
+    /** Disables the ticked suggestions one by one, each recorded in History with its own undo. */
+    fun disableSuggested(packages: List<String>) {
+        val id = _state.value.selectedId ?: return
+        _state.update { it.copy(device = it.device.copy(busy = DISABLING)) }
+        viewModelScope.launch {
+            var done = 0
+            for (pkg in packages) {
+                try {
+                    source.act(id, Action.Disable, pkg)
+                    done++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The TV refused this one or dropped; the count says so.
+                }
+            }
+            _notice.value = Copy.disabledSuggested(done, packages.size)
+            val apps = runCatching { source.apps(id) }.getOrNull()
+            val history = source.history(id)
+            _state.update { s ->
+                s.copy(device = s.device.copy(apps = apps ?: s.device.apps, busy = null, history = history))
+            }
+            loadLists(id)
         }
     }
 

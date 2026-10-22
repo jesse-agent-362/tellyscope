@@ -71,6 +71,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val labels = ConcurrentHashMap<String, String>()
     private val helperDex by lazy { appContext.assets.open("label-helper.jar").use { it.readBytes() } }
     private val appNames = AppNames(File(appContext.filesDir, "app-names"))
+    private val lists = DeviceLists(File(appContext.filesDir, "lists"))
+    /** [historyKey] → the keep entries of that TV's list, once it has been looked up. */
+    private val keep = ConcurrentHashMap<String, Set<String>>()
 
     init {
         Connector.init(File(appContext.filesDir, "adbkey.pem"))
@@ -251,6 +254,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
         // Same key as history: a placeholder serial must not give two boxes one cache.
         val names = appNames.names(key(deviceId), listed, LabelHelper(shell, helperDex)::describe)
+        val keep = keep[key(deviceId)].orEmpty()
         return listed.map { p ->
             val name = names.getValue(p.name)
             labels[p.name] = name.label
@@ -262,11 +266,14 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 enabled = p.name !in disabled,
                 // Same rule as Actions.run: no known launcher, nothing can be stopped or disabled.
                 // A disabled app stays unprotected so Enable (always allowed) still shows.
-                protectedReason = when {
-                    home.isNotEmpty() -> Protected.reason(p.name, home)
-                    p.name in disabled -> null
-                    else -> ProtectedReason.UNKNOWN_HOME
-                }?.let(::reasonText),
+                protectedReason = withKeep(
+                    when {
+                        home.isNotEmpty() -> Protected.reason(p.name, home)
+                        p.name in disabled -> null
+                        else -> ProtectedReason.UNKNOWN_HOME
+                    }?.let(::reasonText),
+                    p.name, enabled = p.name !in disabled, keep,
+                ),
                 version = "",
                 icon = name.icon,
             )
@@ -290,6 +297,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         // Before the first change on a TV, note what was already off: Restore must leave those alone.
         val key = key(deviceId)
         if (!book.hasBaseline(key)) book.setBaseline(key, disabledPackages(deviceId))
+        // The list's keep entries add to the built-in protection in Actions.run; look it up if not yet.
+        if (action == Action.Stop || action == Action.Disable) {
+            if (keepRefuses(action, packageName, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
+                throw IllegalStateException(KEEP_REASON)
+            }
+        }
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
             is ActionResult.Done -> book.record(
@@ -315,6 +328,42 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         return restoreEach(book.restorable(key).filter { it in off }) { pkg ->
             act(deviceId, Action.Enable, pkg, undoing = book.openDisable(key, pkg))
         }
+    }
+
+    override suspend fun suggestions(deviceId: String): Suggestions = try {
+        val r = resolve(deviceId)
+        when {
+            r.index == null -> Suggestions.Unavailable
+            r.entry == null -> Suggestions.Pick(r.index.commit, r.index.devices)
+            r.list == null -> Suggestions.Unavailable
+            else -> Suggestions.Ready(r.index.commit, r.list, r.sdk, suggest(r.list, apps(deviceId), r.sdk), r.index.devices)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        Suggestions.Unavailable // the TV dropped mid-read
+    }
+
+    override suspend fun pickList(deviceId: String, listId: String) {
+        val key = key(deviceId)
+        lists.pick(key, listId)
+        keep.remove(key)
+    }
+
+    private class Resolved(val index: ListIndex?, val entry: ListEntry?, val list: DeviceList?, val sdk: Int?)
+
+    /** This TV's list (picked, else matched), with its keep entries recorded for [apps] and [act]. */
+    private suspend fun resolve(deviceId: String): Resolved {
+        val index = lists.index() ?: return Resolved(null, null, null, null)
+        val out = session(deviceId).shell(
+            (MATCH_KEYS.map { "ro.product.$it" } + "ro.build.version.sdk").joinToString("; ") { "getprop $it" },
+        ).output.lines().map { it.trim().ifEmpty { null } }
+        val props = MATCH_KEYS.withIndex().associate { (i, k) -> k to out.getOrNull(i) }
+        val key = key(deviceId)
+        val entry = lists.entryFor(index, key, props)
+        val list = entry?.let { lists.list(it) }
+        keep[key] = list?.keep.orEmpty()
+        return Resolved(index, entry, list, out.getOrNull(MATCH_KEYS.size)?.toIntOrNull())
     }
 
     /**

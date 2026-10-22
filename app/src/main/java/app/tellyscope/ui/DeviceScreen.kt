@@ -90,6 +90,7 @@ import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.NetworkInfo
 import app.tellyscope.data.Proc
 import app.tellyscope.data.Snapshot
+import app.tellyscope.data.Suggestions
 import app.tellyscope.ui.theme.SmallNumber
 import app.tellyscope.ui.theme.StatNumber
 
@@ -118,6 +119,8 @@ data class DeviceActions(
     /** Asks where to save [TvFile] on the phone, then copies it. */
     val saveFile: (TvFile) -> Unit = {},
     val cancelTransfer: () -> Unit = {},
+    val pickList: (String) -> Unit = {},
+    val disableSuggested: (List<String>) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -213,6 +216,12 @@ fun DeviceScreen(
                 // The :adb source has no per-process list yet; no bars beats an empty card.
                 if (q.isEmpty() && it.procs.isNotEmpty() && !offline) item { UsageCard(it, ui.apps) }
             }
+            if (!offline && q.isEmpty()) {
+                val count = (ui.lists as? Suggestions.Ready)?.groups?.sumOf { it.packages.size } ?: 0
+                section("lists", "Suggested for this TV", count) {
+                    SuggestionsBlock(ui.lists, ui.busy == DISABLING, actions.pickList, actions.disableSuggested)
+                }
+            }
             // An offline TV can't list anything: sections with nothing in them stay out of the way.
             if (!offline || ui.apps.isNotEmpty()) section(
                 key = "apps",
@@ -252,9 +261,18 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
     var open by remember { mutableStateOf(false) }
     var forgetting by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    var about by remember { mutableStateOf(false) }
     val device = state.selected ?: return
     if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
     if (renaming) RenameDialog(device.nickname.orEmpty(), networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
+    if (about) AboutDialog(
+        when (val l = state.device.lists) {
+            is Suggestions.Pick -> l.commit
+            is Suggestions.Ready -> l.commit
+            else -> null
+        },
+        onDismiss = { about = false },
+    )
     val offlineCount = state.devices.count { it.state != DeviceState.Online }
     Box {
         Row(
@@ -309,6 +327,11 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 text = { Text("Forget this TV") },
                 leadingIcon = { Icon(Icons.Default.Delete, null) },
                 onClick = { open = false; forgetting = true },
+            )
+            DropdownMenuItem(
+                text = { Text("About & licences") },
+                leadingIcon = { Icon(Icons.Default.Info, null) },
+                onClick = { open = false; about = true },
             )
         }
     }

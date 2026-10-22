@@ -75,6 +75,12 @@ object Copy {
 
     fun mb(v: Int) = if (v >= 1024) "%.1f GB".format(v / 1024.0) else "$v MB"
 
+    fun disabledSuggested(done: Int, of: Int) = when {
+        done == of -> "Disabled $done ${if (done == 1) "app" else "apps"}. Undo any of them from History."
+        done == 0 -> "The TV didn't disable any of them."
+        else -> "Disabled $done of $of apps; the TV refused the rest. Undo any of them from History."
+    }
+
     const val ANDROID_SYSTEM = "Android system"
 
     /** The word next to the status dot, so the state never rests on colour alone. */
