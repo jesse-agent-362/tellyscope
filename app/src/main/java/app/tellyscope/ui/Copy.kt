@@ -23,11 +23,17 @@ object Copy {
         Action.Open -> "Yes, open it"
     }
 
-    fun explain(action: Action, app: String) = when (action) {
-        Action.Stop -> "Stops $app until you open it again."
-        Action.Disable -> "Hides $app and stops it running. Nothing is deleted; you can turn it back on here."
-        Action.Enable -> "Turns $app back on."
-        Action.Open -> "Opens $app on the TV."
+    /**
+     * Names the package next to the label: the label comes from the app itself, and any app can
+     * call itself "Settings". The package id is what actually gets changed.
+     */
+    fun explain(action: Action, app: String, pkg: String) = "$app ($pkg)".let { who ->
+        when (action) {
+            Action.Stop -> "Stops $who until you open it again."
+            Action.Disable -> "Hides $who and stops it running. Nothing is deleted; you can turn it back on here."
+            Action.Enable -> "Turns $who back on."
+            Action.Open -> "Opens $who on the TV."
+        }
     }
 
     fun done(action: Action, app: String) = when (action) {

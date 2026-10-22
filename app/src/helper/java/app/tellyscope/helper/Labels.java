@@ -50,7 +50,9 @@ public final class Labels {
                 string(out, ai.loadLabel(pm).toString());
                 out.print(",\"v\":");
                 out.print(versionCode(p));
-                String icon = icon(ai.loadIcon(pm));
+                // TV-only apps often ship a banner and no icon, which would draw as the generic robot.
+                Drawable art = ai.icon == 0 && ai.banner != 0 ? ai.loadBanner(pm) : ai.loadIcon(pm);
+                String icon = icon(art);
                 if (icon != null) {
                     out.print(",\"i\":\"");
                     out.print(icon);
@@ -86,7 +88,15 @@ public final class Labels {
         if (d == null) return null;
         try {
             Bitmap b = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888);
-            d.setBounds(0, 0, ICON_PX, ICON_PX);
+            // Fit, centred: a 16:9 banner keeps its shape instead of being squashed square.
+            int w = d.getIntrinsicWidth(), h = d.getIntrinsicHeight();
+            if (w > 0 && h > 0 && w != h) {
+                int fw = w > h ? ICON_PX : ICON_PX * w / h;
+                int fh = w > h ? ICON_PX * h / w : ICON_PX;
+                d.setBounds((ICON_PX - fw) / 2, (ICON_PX - fh) / 2, (ICON_PX + fw) / 2, (ICON_PX + fh) / 2);
+            } else {
+                d.setBounds(0, 0, ICON_PX, ICON_PX);
+            }
             d.draw(new Canvas(b));
             ByteArrayOutputStream png = new ByteArrayOutputStream();
             b.compress(Bitmap.CompressFormat.PNG, 100, png);

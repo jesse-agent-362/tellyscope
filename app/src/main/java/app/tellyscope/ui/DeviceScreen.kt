@@ -441,7 +441,10 @@ private fun EmptyLine(q: String) {
 
 @Composable
 fun AppIcon(app: AppInfo, modifier: Modifier = Modifier) {
-    val image = remember(app.icon) { app.icon?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
+    val image = remember(app.icon) {
+        // A 96 px icon is a few KB; anything far bigger is a TV sending something odd.
+        app.icon?.takeIf { it.size <= 64 * 1024 }?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
     if (image != null) {
         Image(image, contentDescription = null, modifier.size(40.dp).clip(MaterialTheme.shapes.medium))
         return
@@ -486,6 +489,8 @@ private fun AppRow(
         val proposed = pending?.takeIf { it.first == app.packageName }?.second
         AnimatedVisibility((open || proposed != null) && app.protectedReason == null) {
             Column(Modifier.padding(start = 52.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The label is whatever the app calls itself; the package id is what an action touches.
+                Text(app.packageName, style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (proposed == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (app.enabled && ram > 0) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Stop) }) { Text(Copy.button(Action.Stop)) }
@@ -493,7 +498,7 @@ private fun AppRow(
                         else FilledTonalButton(onClick = { actions.propose(app.packageName, Action.Enable) }) { Text(Copy.button(Action.Enable)) }
                     }
                 } else {
-                    Text(Copy.explain(proposed, app.label), style = MaterialTheme.typography.bodyMedium)
+                    Text(Copy.explain(proposed, app.label, app.packageName), style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = actions.confirm) { Text(Copy.confirm(proposed)) }
                         TextButton(onClick = actions.cancel) { Text("Cancel") }
