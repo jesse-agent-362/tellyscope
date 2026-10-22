@@ -136,7 +136,7 @@ class ScreenshotTest {
         shot("07_device_history") { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
     }
 
-    @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, {}, {}) }
+    @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }
 
-    @Test fun permission_denied() = shot("08_permission_denied") { PermissionScreen(denied = true, {}, {}) }
+    @Test fun permission_denied() = shot("08_permission_denied") { PermissionScreen(denied = true, canAsk = true, {}, {}) }
 }

@@ -83,10 +83,12 @@ class MainActivity : ComponentActivity() {
 
         var ok by remember { mutableStateOf(granted()) }
         var denied by rememberSaveable { mutableStateOf(false) }
+        var canAsk by rememberSaveable { mutableStateOf(true) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { yes ->
             ok = yes
-            // No rationale after a refusal means Android won't ask again: only Settings can grant it.
-            denied = !yes && !shouldShowRequestPermissionRationale(permission)
+            denied = !yes
+            // No rationale after a refusal means Android won't show its dialog again: only Settings can grant it.
+            canAsk = shouldShowRequestPermissionRationale(permission)
         }
         // Coming back from Settings.
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { ok = granted() }
@@ -96,6 +98,7 @@ class MainActivity : ComponentActivity() {
         } else {
             PermissionScreen(
                 denied = denied,
+                canAsk = canAsk,
                 onAllow = { launcher.launch(permission) },
                 onSettings = {
                     startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
