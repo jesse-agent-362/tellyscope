@@ -21,7 +21,7 @@ import java.io.File
 fun main(args: Array<String>) = runBlocking {
     Connector.init(File(System.getProperty("user.home"), ".tellyscope/adbkey.pem"))
     when (args.firstOrNull()) {
-        "scan" -> LanScanner(KadbMdnsJvm()).scan().collect { println("${it.host}:${it.port}  ${it.kind}  ${it.name ?: "-"}") }
+        "scan" -> LanScanner(KadbMdnsJvm()).scan(LanScanner.lanHosts()).collect { println("${it.host}:${it.port}  ${it.kind}  ${it.name ?: "-"}") }
         "pair" -> Connector.pair(args[1], args[2].toInt(), args[3]).also { println("paired") }
         "stats" -> {
             val link = DeviceLink(args[1], args.getOrNull(2)?.toInt() ?: 5555, this)

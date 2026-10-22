@@ -18,7 +18,9 @@ class Actions(private val shell: AdbShell) {
     suspend fun run(action: Action, pkg: String): ActionResult {
         require(PACKAGE.matches(pkg)) { "not a package name: $pkg" } // it goes into a shell line
         if (action != Action.ENABLE && action != Action.OPEN) {
-            Protected.reason(pkg, homePackages())?.let { return ActionResult.Refused(it) }
+            // No launcher answer (no `cmd` before Android 7, or an error): we can't tell what's safe.
+            val home = homePackages().ifEmpty { return ActionResult.Refused(ProtectedReason.UNKNOWN_HOME) }
+            Protected.reason(pkg, home)?.let { return ActionResult.Refused(it) }
         }
         return when (action) {
             Action.STOP -> exec("am force-stop $pkg", Action.OPEN)

@@ -41,8 +41,10 @@ data class ScanHit(
 }
 
 /**
- * Finds ADB on the local /24s: a TCP sweep of [port] plus, if given, mDNS for wireless debugging.
- * MAC/maker lookup is left out: Android 10+ apps can't read the ARP table.
+ * Finds ADB on the LAN: a TCP sweep of [port] over the hosts the caller passes, plus, if given, mDNS
+ * for wireless debugging. The caller picks the network: only Wi-Fi or Ethernet, never cellular or a
+ * VPN (see [subnetHosts], [lanHosts]). MAC/maker lookup is left out: Android 10+ apps can't read
+ * the ARP table.
  */
 class LanScanner(
     private val mdns: KadbMdns? = null,
@@ -52,7 +54,7 @@ class LanScanner(
     private val parallelism: Int = 64,
 ) {
     /** Emits each hit as soon as it answers; completes when the sweep and the mDNS window end. */
-    fun scan(hosts: List<String> = localSubnetHosts()): Flow<ScanHit> = channelFlow {
+    fun scan(hosts: List<String>): Flow<ScanHit> = channelFlow {
         launch { sweep(hosts) }
         mdns?.let { launch { browse(it) } }
     }
@@ -100,17 +102,34 @@ class LanScanner(
         runCatching { InetAddress.getByName(host).canonicalHostName }.getOrNull()?.takeIf { it != host }
 
     companion object {
-        /** Every other address in the /24 of each up, non-loopback IPv4 interface. */
-        fun localSubnetHosts(): List<String> =
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.toList() }
-                .filterIsInstance<Inet4Address>()
-                .flatMap { addr ->
-                    val b = addr.address
-                    val prefix = "${b[0].toUByte()}.${b[1].toUByte()}.${b[2].toUByte()}"
-                    (1..254).map { "$prefix.$it" }.filter { it != addr.hostAddress }
+        /** Every other host in [address]'s subnet, capped at the surrounding /24. */
+        fun subnetHosts(address: Inet4Address, prefixLength: Int = 24): List<String> {
+            val bits = 32 - prefixLength.coerceIn(24, 30)
+            val self = address.address.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xff) }
+            val base = self and (-1 shl bits)
+            return (1 until (1 shl bits) - 1).map { base + it }.filter { it != self }.map { ip ->
+                (3 downTo 0).joinToString(".") { ((ip ushr (it * 8)) and 0xff).toString() }
+            }
+        }
+
+        /**
+         * Hosts on this machine's Wi-Fi and Ethernet interfaces, for the JVM CLI. Cellular (rmnet,
+         * ccmni), VPN (tun, wg, ppp) and bridges are never swept. On Android, pass the active Wi-Fi
+         * or Ethernet network's address to [subnetHosts] instead.
+         */
+        fun lanHosts(): List<String> = lanHosts(
+            NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }.flatMap { i ->
+                i.interfaceAddresses.mapNotNull { a ->
+                    (a.address as? Inet4Address)?.let { Triple(i.name, it, a.networkPrefixLength.toInt()) }
                 }
-                .distinct()
+            },
+        )
+
+        /** [addresses]: interface name, its IPv4 address and prefix length. */
+        internal fun lanHosts(addresses: List<Triple<String, Inet4Address, Int>>): List<String> =
+            addresses.filter { LAN_INTERFACE.matches(it.first) }.flatMap { subnetHosts(it.second, it.third) }.distinct()
+
+        // eth0, wlan0, and predictable names: enp3s0, wlp2s0, macOS en0.
+        private val LAN_INTERFACE = Regex("eth\\d+|(en|wl)\\w+")
     }
 }

@@ -3,7 +3,12 @@
 package app.tellyscope.adb
 
 /** Why a package may not be stopped or disabled. The UI shows the matching copy. */
-enum class ProtectedReason { HOME_SCREEN, SYSTEM, SETTINGS, PLAY_SERVICES, KEYBOARD, TV_INPUTS_REMOTE, SETUP_WIZARD }
+enum class ProtectedReason {
+    HOME_SCREEN, SYSTEM, SETTINGS, PLAY_SERVICES, KEYBOARD, TV_INPUTS_REMOTE, SETUP_WIZARD,
+
+    /** The TV didn't say which app is its home screen, so nothing is stopped or disabled. */
+    UNKNOWN_HOME,
+}
 
 /**
  * Packages Tellyscope never stops or disables. Over-matching is fine: a protected package just
@@ -34,6 +39,7 @@ object Protected {
 
     /** Name fragments, checked in order; manufacturer names vary, so these match loosely. */
     private val PATTERNS: List<Pair<String, ProtectedReason>> = listOf(
+        "launcher" to ProtectedReason.HOME_SCREEN, // second guard behind the live home lookup
         "networkstack" to ProtectedReason.SYSTEM, // Wi-Fi and Ethernet setup; we'd cut our own link
         "inputmethod" to ProtectedReason.KEYBOARD,
         "keyboard" to ProtectedReason.KEYBOARD,

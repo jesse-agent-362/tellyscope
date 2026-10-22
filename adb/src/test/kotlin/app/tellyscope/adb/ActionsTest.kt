@@ -36,6 +36,19 @@ class ActionsTest {
         assertEquals(ActionResult.Refused(ProtectedReason.HOME_SCREEN), Actions(sh).run(Action.DISABLE, "com.spocky.projengmenu"))
     }
 
+    @Test fun unknownHomeRefusesStopAndDisable() = runTest {
+        // Android 6 and older have no `cmd`: both launcher lookups come back empty.
+        val sh = FakeShell(mapOf("cmd package" to ShellResult("/system/bin/sh: cmd: not found\n", 127)))
+        val a = Actions(sh)
+        assertEquals(ActionResult.Refused(ProtectedReason.UNKNOWN_HOME), a.run(Action.DISABLE, "com.example.tvlauncher"))
+        assertEquals(ActionResult.Refused(ProtectedReason.UNKNOWN_HOME), a.run(Action.STOP, "com.foo.ads"))
+        assertTrue(sh.ran.none { it.startsWith("pm ") || it.startsWith("am ") })
+    }
+
+    @Test fun launcherNamesAreProtectedEvenWhenNotDefault() = runTest {
+        assertEquals(ActionResult.Refused(ProtectedReason.HOME_SCREEN), Actions(FakeShell(mapOf(home))).run(Action.DISABLE, "com.example.tvlauncher"))
+    }
+
     @Test fun refusesProtectedPackages() = runTest {
         val a = Actions(FakeShell(mapOf(home)))
         assertEquals(ActionResult.Refused(ProtectedReason.PLAY_SERVICES), a.run(Action.DISABLE, "com.google.android.gms"))
