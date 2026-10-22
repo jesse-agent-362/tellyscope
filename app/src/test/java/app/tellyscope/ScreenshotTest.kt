@@ -16,6 +16,7 @@ import app.tellyscope.data.ScanProgress
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceScreen
 import app.tellyscope.ui.DeviceUi
+import app.tellyscope.ui.ForgetDialog
 import app.tellyscope.ui.PermissionScreen
 import app.tellyscope.ui.RowState
 import app.tellyscope.ui.ScanScreen
@@ -139,4 +140,11 @@ class ScreenshotTest {
     @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }
 
     @Test fun permission_denied() = shot("08_permission_denied") { PermissionScreen(denied = true, canAsk = true, {}, {}) }
+
+    @Test fun forget() = shot("09_forget") { ForgetDialog("xgimi-projector", {}, {}) }
+
+    @Test fun scan_offWifi() = scan(
+        ScanUi(scanning = false, noLan = true, hits = listOf(chromecast), rows = mapOf(chromecast.ip to RowState.Found)),
+        name = "10_scan_off_wifi",
+    )
 }

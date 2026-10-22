@@ -27,8 +27,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -86,6 +88,7 @@ data class DeviceActions(
     val cancel: () -> Unit = {},
     val undo: (HistoryEntry) -> Unit = {},
     val reconnect: () -> Unit = {},
+    val forget: (String) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,7 +189,9 @@ fun DeviceScreen(
 @Composable
 private fun DevicePicker(state: UiState, actions: DeviceActions) {
     var open by remember { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
     val device = state.selected ?: return
+    if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
     val offlineCount = state.devices.count { it.state != DeviceState.Online }
     Box {
         Row(
@@ -195,7 +200,7 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
         ) {
             StateDot(device.state)
             Spacer(Modifier.width(8.dp))
-            Text(device.hit.hostname ?: device.model ?: device.hit.ip, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name(device), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch TV")
         }
         DropdownMenu(open, onDismissRequest = { open = false }) {
@@ -203,7 +208,7 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 .filter { state.showOffline || it.state == DeviceState.Online || it.id == state.selectedId }
                 .forEach { d ->
                     DropdownMenuItem(
-                        text = { Text(d.hit.hostname ?: d.model ?: d.hit.ip) },
+                        text = { Text(name(d)) },
                         leadingIcon = { StateDot(d.state) },
                         trailingIcon = {
                             if (d.state != DeviceState.Online) Text(
@@ -225,8 +230,27 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 leadingIcon = { Icon(Icons.Default.Add, null) },
                 onClick = { open = false; actions.addDevice() },
             )
+            DropdownMenuItem(
+                text = { Text("Forget this TV") },
+                leadingIcon = { Icon(Icons.Default.Delete, null) },
+                onClick = { open = false; forgetting = true },
+            )
         }
     }
+}
+
+private fun name(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
+
+/** Forgetting only touches this phone; the TV keeps its own list of allowed computers. */
+@Composable
+fun ForgetDialog(name: String, onForget: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Forget $name?") },
+        text = { Text("Tellyscope stops reconnecting to it and removes it from this phone. Nothing on the TV changes. You can add it again from a scan.") },
+        confirmButton = { Button(onClick = onForget) { Text("Forget") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

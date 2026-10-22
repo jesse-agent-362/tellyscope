@@ -77,21 +77,30 @@ class FakeDeviceSource(
         return ConnectResult.Online(device(hit))
     }
 
-    override suspend fun known(): List<Device> = listOf(
-        Device(
-            id = "192.168.1.64",
-            hit = ScanHit("192.168.1.64", 5555, ScanKind.Classic, "bedroom-firetv", "Amazon"),
-            state = DeviceState.Offline,
-            model = "Fire TV Stick 4K",
-            manufacturer = "Amazon",
-            android = "9",
-            lastSeen = clock() - 14 * 60_000,
-        ),
-    )
+    /** Connected or remembered TVs, keyed by id; starts with one offline TV to show that state. */
+    private val remembered = linkedMapOf<String, Device>().apply {
+        listOf(
+            Device(
+                id = "192.168.1.64",
+                hit = ScanHit("192.168.1.64", 5555, ScanKind.Classic, "bedroom-firetv", "Amazon"),
+                state = DeviceState.Offline,
+                model = "Fire TV Stick 4K",
+                manufacturer = "Amazon",
+                android = "9",
+                lastSeen = clock() - 14 * 60_000,
+            ),
+        ).takeIf { scenario == Scenario.Normal }.orEmpty().forEach { put(it.id, it) }
+    }
+
+    override suspend fun known(): List<Device> = remembered.values.toList()
+
+    override suspend fun forget(deviceId: String) {
+        remembered.remove(deviceId)
+    }
 
     private fun device(hit: ScanHit): Device {
         val (model, maker, android) = models[hit.maker] ?: Triple("Android TV box", hit.maker, "10")
-        return Device(hit.ip, hit, DeviceState.Online, model, maker, android, clock())
+        return Device(hit.ip, hit, DeviceState.Online, model, maker, android, clock()).also { remembered[it.id] = it }
     }
 
     override fun live(deviceId: String): Flow<Snapshot> = flow {

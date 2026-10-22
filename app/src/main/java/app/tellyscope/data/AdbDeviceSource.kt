@@ -16,12 +16,16 @@ import app.tellyscope.adb.ProtectedReason
 import com.flyfishxu.kadb.exception.AdbPairAuthException
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transformWhile
+import kotlinx.coroutines.launch
 import java.io.File
 import java.net.Inet4Address
 import java.util.concurrent.ConcurrentHashMap
@@ -40,12 +44,72 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private val scope = CoroutineScope(SupervisorJob())
     private val links = ConcurrentHashMap<String, DeviceLink>()
     private val hits = ConcurrentHashMap<String, ScanHit>()
+    private val store = DeviceStore(File(appContext.filesDir, "devices.tsv"))
+    private val saved = ConcurrentHashMap<String, SavedDevice>()
+    /** Remembered TVs that haven't answered since launch: shown offline, not "connecting". */
+    private val restoring = ConcurrentHashMap.newKeySet<String>()
+    private val watchers = ConcurrentHashMap<String, Job>()
     /** Wireless debugging advertises pairing and connect on different ports. */
     private val pairingPorts = ConcurrentHashMap<String, Int>()
     private var historyId = 0L
 
     init {
         Connector.init(File(appContext.filesDir, "adbkey.pem"))
+    }
+
+    /** Remembered TVs reconnect in the background from launch; [known] waits for the file read. */
+    private val restored = scope.async(Dispatchers.IO) {
+        store.load().forEach { d ->
+            saved[d.host] = d
+            hits[d.host] = ScanHit(d.host, d.port, d.kind, d.name, null)
+            restoring += d.host
+            link(d.host, d.port, first = null, knownGood = true)
+        }
+    }
+
+    /** Starts the reconnecting link for a TV and keeps its saved entry current as it comes and goes. */
+    private fun link(host: String, port: Int, first: AdbConnectResult?, knownGood: Boolean) {
+        var pending = first
+        val link = DeviceLink(host, port, scope, knownGood = knownGood, open = { h, p ->
+            pending?.also { pending = null } ?: Connector.connect(h, p)
+        })
+        links.put(host, link)?.disconnect()
+        watchers.put(host, scope.launch {
+            link.state.collect { st ->
+                if (st == AdbState.ONLINE) restoring -= host
+                if (st == AdbState.ONLINE || st == AdbState.OFFLINE) remember(host)
+            }
+        })?.cancel()
+        link.connect()
+    }
+
+    private fun remember(host: String) {
+        val link = links[host] ?: return
+        val hit = hits[host] ?: return
+        val old = saved[host]
+        saved[host] = SavedDevice(
+            host = host,
+            port = link.port,
+            kind = hit.kind,
+            name = hit.hostname,
+            model = link.stats.value?.model ?: old?.model,
+            lastSeen = link.lastSeenMillis ?: old?.lastSeen ?: System.currentTimeMillis(),
+        )
+        persist()
+    }
+
+    /** Reads the map at write time, so whichever save runs last writes the newest list. */
+    private fun persist() {
+        scope.launch(Dispatchers.IO) { synchronized(store) { store.save(saved.values.sortedBy { it.host }) } }
+    }
+
+    override suspend fun forget(deviceId: String) {
+        restored.await()
+        watchers.remove(deviceId)?.cancel()
+        links.remove(deviceId)?.disconnect()
+        hits.remove(deviceId)
+        restoring -= deviceId
+        if (saved.remove(deviceId) != null) persist()
     }
 
     /**
@@ -66,7 +130,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     }
 
     override fun scan(): Flow<ScanEvent> = flow {
-        LanScanner(KadbMdnsAndroid(appContext)).scan(lanHosts()).collect { h ->
+        val hosts = lanHosts()
+        if (hosts.isEmpty()) emit(ScanEvent.NoLan)
+        LanScanner(KadbMdnsAndroid(appContext)).scan(hosts).collect { h ->
             if (h.kind == AdbHit.Kind.PAIRING) {
                 pairingPorts[h.host] = h.port
                 if (hits.containsKey(h.host)) return@collect
@@ -87,13 +153,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun connect(hit: ScanHit): ConnectResult = when (val r = Connector.connect(hit.ip, hit.port)) {
         is AdbConnectResult.Online -> {
             hits[hit.ip] = hit
+            restoring -= hit.ip
             // Hand the open session to a link, which reconnects on its own from here on.
-            var first: AdbConnectResult? = r
-            val link = DeviceLink(hit.ip, hit.port, scope, open = { h, p ->
-                first?.also { first = null } ?: Connector.connect(h, p)
-            })
-            links.put(hit.ip, link)?.disconnect()
-            link.connect()
+            link(hit.ip, hit.port, first = r, knownGood = false)
             ConnectResult.Online(device(hit.ip))
         }
         AdbConnectResult.NotAllowed -> ConnectResult.NotAllowed
@@ -114,7 +176,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         return connect(connectHit)
     }
 
-    override suspend fun known(): List<Device> = links.keys.map(::device)
+    override suspend fun known(): List<Device> {
+        restored.await()
+        return links.keys.map(::device)
+    }
 
     override fun live(deviceId: String): Flow<Snapshot> {
         val link = links[deviceId] ?: return flow {}
@@ -201,10 +266,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     private fun device(id: String): Device {
         val link = links[id]
         val stats = link?.stats?.value
+        val state = link?.state?.value
         return Device(
             id = id,
             hit = hits.getValue(id),
-            state = when (link?.state?.value) {
+            state = if (id in restoring && state != AdbState.ONLINE) DeviceState.Offline else when (state) {
                 AdbState.WAITING -> DeviceState.Waiting
                 AdbState.ONLINE -> DeviceState.Online
                 AdbState.OFFLINE -> DeviceState.Offline
@@ -212,10 +278,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 AdbState.NEEDS_PAIRING -> DeviceState.NeedsPairing
                 AdbState.FOUND, null -> DeviceState.Found
             },
-            model = stats?.model,
+            model = stats?.model ?: saved[id]?.model,
             manufacturer = stats?.manufacturer,
             android = stats?.androidVersion,
-            lastSeen = link?.lastSeenMillis,
+            lastSeen = link?.lastSeenMillis ?: saved[id]?.lastSeen,
         )
     }
 

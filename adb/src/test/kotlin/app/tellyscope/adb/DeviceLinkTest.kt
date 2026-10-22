@@ -24,6 +24,16 @@ class DeviceLinkTest {
         assertEquals(1, calls)
     }
 
+    @Test fun rememberedDeviceKeepsRetryingThroughNotAllowed() = runTest {
+        // After an app restart the TV may still be waking up: a stalled handshake isn't a refusal.
+        var calls = 0
+        val link = DeviceLink("tv", 5555, backgroundScope, open = { _, _ -> calls++; ConnectResult.NotAllowed }, knownGood = true)
+        link.connect(); runCurrent()
+        advanceTimeBy(20_001)
+        assertEquals(DeviceState.WAITING, link.state.value)
+        assertTrue(calls >= 4)
+    }
+
     @Test fun dropsToOfflineThenReconnects() = runTest {
         val sessions = mutableListOf<FakeShell>()
         var reachable = true

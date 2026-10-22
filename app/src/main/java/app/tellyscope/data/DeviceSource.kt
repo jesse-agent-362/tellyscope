@@ -23,6 +23,9 @@ interface DeviceSource {
     /** Previously paired devices, including offline ones. */
     suspend fun known(): List<Device>
 
+    /** Stop reconnecting to a TV and drop it from the remembered list. */
+    suspend fun forget(deviceId: String)
+
     /** Fast-tier stats. Completes when the device goes offline. */
     fun live(deviceId: String): Flow<Snapshot>
 

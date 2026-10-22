@@ -116,7 +116,7 @@ private fun ScanStatus(scan: ScanUi) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (scan.scanning) {
             Text(
-                "Looking for TVs on your Wi-Fi…  ${p?.probed ?: 0}/${p?.total ?: 254}",
+                "Looking for TVs${if (scan.noLan) "" else " on your Wi-Fi"}…  ${p?.probed ?: 0}/${p?.total ?: 254}",
                 style = MaterialTheme.typography.labelLarge,
             )
             LinearWavyProgressIndicator(
@@ -126,8 +126,15 @@ private fun ScanStatus(scan: ScanUi) {
         } else {
             val n = scan.hits.size
             Text(
-                if (n == 0) "No TVs found yet" else "Found $n ${if (n == 1) "TV" else "TVs"} on your Wi-Fi",
+                if (n == 0) "No TVs found yet" else "Found $n ${if (n == 1) "TV" else "TVs"}${if (scan.noLan) "" else " on your Wi-Fi"}",
                 style = MaterialTheme.typography.labelLarge,
+            )
+        }
+        if (scan.noLan) {
+            Text(
+                "You're not on Wi-Fi, so only TVs that announce themselves show up. Join the TV's Wi-Fi, or add it by IP address.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

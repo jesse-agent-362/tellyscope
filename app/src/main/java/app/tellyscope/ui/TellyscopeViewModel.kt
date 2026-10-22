@@ -37,6 +37,8 @@ sealed interface RowState {
 data class ScanUi(
     val scanning: Boolean = false,
     val progress: ScanProgress? = null,
+    /** Not on Wi-Fi or Ethernet, so there was no sweep. */
+    val noLan: Boolean = false,
     val hits: List<ScanHit> = emptyList(),
     val rows: Map<String, RowState> = emptyMap(),
 )
@@ -85,11 +87,18 @@ class TellyscopeViewModel(
     private var mediumJob: Job? = null
 
     init {
-        viewModelScope.launch { _state.update { it.copy(devices = source.known()) } }
         viewModelScope.launch {
+            // Remembered TVs open straight to their page (offline until they answer).
+            val known = source.known()
+            _state.update { it.copy(devices = known) }
+            if (_state.value.selectedId == null) known.firstOrNull()?.let { select(it.id) }
+        }
+        viewModelScope.launch {
+            var tick = 0
             while (true) {
                 delay(1_000)
                 _state.update { it.copy(now = clock()) }
+                if (++tick % 3 == 0) refreshDevices()
             }
         }
         rescan()
@@ -98,7 +107,7 @@ class TellyscopeViewModel(
     fun rescan() {
         if (scanJob?.isActive == true) return
         scanJob = viewModelScope.launch {
-            _state.update { it.copy(scan = it.scan.copy(scanning = true)) }
+            _state.update { it.copy(scan = it.scan.copy(scanning = true, noLan = false)) }
             source.scan().collect { e ->
                 when (e) {
                     is ScanEvent.Progress -> _state.update { it.copy(scan = it.scan.copy(progress = e.progress)) }
@@ -110,6 +119,7 @@ class TellyscopeViewModel(
                             rows = s.scan.rows + (e.hit.ip to RowState.Found),
                         ))
                     }
+                    ScanEvent.NoLan -> _state.update { it.copy(scan = it.scan.copy(noLan = true)) }
                     ScanEvent.Done -> Unit
                 }
             }
@@ -202,6 +212,25 @@ class TellyscopeViewModel(
             } catch (_: Exception) {
                 // Nothing to show: the stats stop and the offline card explains.
             }
+        }
+    }
+
+    /** Remembered TVs reconnect on their own; pick up their state and restart stats when one comes back. */
+    private suspend fun refreshDevices() {
+        val known = source.known()
+        val before = _state.value.selected?.state
+        _state.update { it.copy(devices = known) }
+        val now = _state.value.selected ?: return
+        if (now.state == DeviceState.Online && before != DeviceState.Online) select(now.id)
+    }
+
+    fun forget(id: String) {
+        viewModelScope.launch {
+            source.forget(id)
+            val known = source.known()
+            _state.update { it.copy(devices = known) }
+            // Next TV, online ones first; none left means back to the scan screen.
+            select((known.firstOrNull { it.state == DeviceState.Online } ?: known.firstOrNull())?.id)
         }
     }
 

@@ -16,7 +16,8 @@ import kotlin.time.Duration.Companion.seconds
  * One device's connection lifecycle: connect, stream stats while online, reconnect on its own
  * after the TV sleeps or drops off Wi-Fi. NOT_ALLOWED and NEEDS_PAIRING stop the loop until
  * [connect] is called again; a device that was online before keeps retrying instead, since a TV
- * waking up can stall the handshake exactly like an unanswered prompt.
+ * waking up can stall the handshake exactly like an unanswered prompt. [knownGood] marks a device
+ * remembered from an earlier launch, which counts as online before.
  */
 class DeviceLink(
     val host: String,
@@ -25,6 +26,7 @@ class DeviceLink(
     private val retryEvery: Duration = 5.seconds,
     private val monitorFor: (AdbShell) -> MonitorSource = { DeviceMonitor(it) },
     private val open: suspend (String, Int) -> ConnectResult = { h, p -> Connector.connect(h, p) },
+    private val knownGood: Boolean = false,
 ) {
     private val _state = MutableStateFlow(DeviceState.FOUND)
     val state: StateFlow<DeviceState> = _state.asStateFlow()
@@ -53,7 +55,7 @@ class DeviceLink(
 
     private suspend fun loop() {
         _state.value = _state.value.on(DeviceEvent.Connect)
-        var wasOnline = false
+        var wasOnline = knownGood
         while (true) {
             when (val r = open(host, port)) {
                 is ConnectResult.NotAllowed -> if (!wasOnline) {

@@ -20,6 +20,8 @@ data class ScanProgress(val probed: Int, val total: Int, val subnet: String)
 sealed interface ScanEvent {
     data class Found(val hit: ScanHit) : ScanEvent
     data class Progress(val progress: ScanProgress) : ScanEvent
+    /** Not on Wi-Fi or Ethernet: only TVs that announce themselves (or add-by-IP) can be found. */
+    data object NoLan : ScanEvent
     data object Done : ScanEvent
 }
 
