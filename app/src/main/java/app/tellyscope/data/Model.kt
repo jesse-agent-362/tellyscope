@@ -81,13 +81,15 @@ data class AppInfo(
     val packageName: String,
     /** Human label from the APK. Never the package id; the source falls back to a humanised id. */
     val label: String,
-    /** ARGB of the icon tile until real icons are wired; null = neutral tile. */
+    /** ARGB of the letter avatar; null = neutral tile. Unused when [icon] is set. */
     val iconColor: Long?,
     val system: Boolean,
     val enabled: Boolean,
     /** Why this app can't be touched, in user words; null when actions are allowed. */
     val protectedReason: String?,
     val version: String,
+    /** The app's own icon as a PNG, from the TV; null shows the letter avatar. */
+    val icon: ByteArray? = null,
 )
 
 data class Socket(val app: String, val remote: String, val state: String)

@@ -2,9 +2,11 @@
 
 package app.tellyscope.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +67,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.Action
@@ -438,6 +441,11 @@ private fun EmptyLine(q: String) {
 
 @Composable
 fun AppIcon(app: AppInfo, modifier: Modifier = Modifier) {
+    val image = remember(app.icon) { app.icon?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
+    if (image != null) {
+        Image(image, contentDescription = null, modifier.size(40.dp).clip(MaterialTheme.shapes.medium))
+        return
+    }
     val bg = app.iconColor?.let { Color(it) } ?: MaterialTheme.colorScheme.secondaryContainer
     val fg = if (app.iconColor != null) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
     Box(modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(bg), contentAlignment = Alignment.Center) {

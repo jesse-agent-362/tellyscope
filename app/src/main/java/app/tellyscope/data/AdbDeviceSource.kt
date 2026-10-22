@@ -9,6 +9,7 @@ import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.Actions
 import app.tellyscope.adb.Connector
 import app.tellyscope.adb.DeviceLink
+import app.tellyscope.adb.LabelHelper
 import app.tellyscope.adb.LanScanner
 import app.tellyscope.adb.Parsers
 import app.tellyscope.adb.Protected
@@ -38,7 +39,8 @@ import app.tellyscope.adb.ScanHit as AdbHit
 /**
  * [DeviceSource] on real TVs through `:adb`. Device id is the TV's IP. Known devices live for the
  * app process only (persisting them is a later slice), and `procs` / network details beyond the
- * IP are empty for now: slice 1 is scan → connect → live CPU/RAM.
+ * IP are empty for now: slice 1 is scan → connect → live CPU/RAM. App names and icons come from
+ * the label helper through [AppNames].
  */
 class AdbDeviceSource(context: Context) : DeviceSource {
     private val appContext = context.applicationContext
@@ -55,6 +57,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     /** Wireless debugging advertises pairing and connect on different ports. */
     private val pairingPorts = ConcurrentHashMap<String, Int>()
     private val book = HistoryBook(File(appContext.filesDir, "history.tsv"))
+    /** Last label seen per package, so history entries read like the app list. */
+    private val labels = ConcurrentHashMap<String, String>()
+    private val helperDex by lazy { appContext.assets.open("label-helper.jar").use { it.readBytes() } }
+    private val appNames = AppNames(File(appContext.filesDir, "app-names"))
 
     init {
         Connector.init(File(appContext.filesDir, "adbkey.pem"))
@@ -225,10 +231,17 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val home = Actions(shell).homePackages()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
-        return Parsers.packages(shell.shell("pm list packages").output).map { p ->
+        // Older pm rejects --show-versioncode and prints no packages; list again without it.
+        val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
+            .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
+        val serial = shell.shell("getprop ro.serialno").output.trim()
+        val names = appNames.names(serial.ifEmpty { deviceId }, listed, LabelHelper(shell, helperDex)::describe)
+        return listed.map { p ->
+            val name = names.getValue(p.name)
+            labels[p.name] = name.label
             AppInfo(
                 packageName = p.name,
-                label = humanise(p.name),
+                label = name.label,
                 iconColor = null,
                 system = p.name in system,
                 enabled = p.name !in disabled,
@@ -240,6 +253,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                     else -> ProtectedReason.UNKNOWN_HOME
                 }?.let(::reasonText),
                 version = "",
+                icon = name.icon,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -268,7 +282,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 at = System.currentTimeMillis(),
                 action = action,
                 packageName = packageName,
-                label = humanise(packageName),
+                label = labels[packageName] ?: AppNames.fallback(packageName),
                 undo = r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
                 undoing = undoing,
             )
@@ -341,12 +355,6 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             android = stats?.androidVersion,
             lastSeen = link?.lastSeenMillis ?: saved[id]?.lastSeen,
         )
-    }
-
-    /** `com.google.android.youtube.tv` → "Youtube". Real APK labels come with the apps slice. */
-    private fun humanise(pkg: String): String {
-        val parts = pkg.split('.').filter { it !in setOf("com", "android", "google", "tv", "app", "apps", "org") }
-        return (parts.lastOrNull() ?: pkg).replaceFirstChar(Char::uppercase)
     }
 
     /** Copy from the protected-apps table in the UX copy doc. */

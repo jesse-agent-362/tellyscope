@@ -13,6 +13,14 @@ class FakeShell(private val answers: Map<String, ShellResult> = emptyMap()) : Ad
         return answers.entries.firstOrNull { command.startsWith(it.key) }?.value ?: ShellResult("", 0)
     }
 
+    val pushed = mutableMapOf<String, ByteArray>()
+    var failPush: Exception? = null
+
+    override suspend fun push(bytes: ByteArray, remotePath: String) {
+        failPush?.let { throw it }
+        pushed[remotePath] = bytes
+    }
+
     override fun close() { closed = true }
 }
 

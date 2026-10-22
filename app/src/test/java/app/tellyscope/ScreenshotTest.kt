@@ -2,6 +2,9 @@
 
 package app.tellyscope
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -9,6 +12,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import app.tellyscope.data.Action
+import app.tellyscope.data.AppInfo
+import app.tellyscope.data.AppNames
 import app.tellyscope.data.Device
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.FakeDeviceSource
@@ -28,6 +33,7 @@ import app.tellyscope.ui.ScanUi
 import app.tellyscope.ui.UiState
 import app.tellyscope.ui.theme.TellyscopeTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import java.io.ByteArrayOutputStream
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -146,6 +152,45 @@ class ScreenshotTest {
             Unit
         }
         shot("07_device_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+    }
+
+    /** A real TV's app list: no per-process stats yet, so the apps sit right under the stat grid. */
+    private fun appsState(apps: List<AppInfo>): UiState {
+        val base = deviceState()
+        return base.copy(device = base.device.copy(snapshot = base.device.snapshot?.copy(procs = emptyList()), apps = apps))
+    }
+
+    private val tvApps = listOf(
+        "com.google.android.youtube.tv" to 0xFFE53935,
+        "com.netflix.ninja" to 0xFF212121,
+        "org.jellyfin.androidtv" to 0xFF7B5EA7,
+        "com.example.weatherbox" to 0xFF0288D1,
+        "com.xgimi.assistant" to 0xFF00897B,
+    )
+
+    /** Stand-ins for the PNGs the helper reads off the TV: no brand artwork in the repo. */
+    private fun iconPng(argb: Long): ByteArray {
+        val b = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        Canvas(b).apply {
+            drawColor(argb.toInt())
+            drawCircle(48f, 48f, 24f, Paint().apply { color = android.graphics.Color.WHITE; isAntiAlias = true })
+        }
+        return ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
+
+    private fun app(pkg: String, label: String, icon: ByteArray?) =
+        AppInfo(pkg, label, null, pkg.startsWith("com.xgimi"), true, null, "", icon)
+
+    @Test fun apps_helperNames() {
+        val labels = listOf("YouTube", "Netflix", "Jellyfin", "Weather Box", "XGIMI Assistant")
+        val apps = tvApps.zip(labels) { (pkg, color), label -> app(pkg, label, iconPng(color)) }
+        shot("09_apps_helper_names") { DeviceScreen(appsState(apps), DeviceActions()) }
+    }
+
+    @Test fun apps_fallbackNames() {
+        // The helper was refused: bundled names where known, a humanised id otherwise, letter avatars.
+        val apps = tvApps.map { (pkg, _) -> app(pkg, AppNames.fallback(pkg), null) }
+        shot("10_apps_fallback_names") { DeviceScreen(appsState(apps), DeviceActions()) }
     }
 
     @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }

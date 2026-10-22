@@ -9,6 +9,7 @@ import com.flyfishxu.kadb.exception.AdbPairAuthException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import okio.Buffer
 import okio.Path.Companion.toPath
 import java.io.File
 import java.io.IOException
@@ -94,6 +95,10 @@ internal class KadbSession(private val kadb: Kadb) : AdbSession {
     override suspend fun shell(command: String): ShellResult {
         val r = runInterruptible(Dispatchers.IO) { kadb.shell(command) }
         return ShellResult(r.output, r.exitCode)
+    }
+
+    override suspend fun push(bytes: ByteArray, remotePath: String) = runInterruptible(Dispatchers.IO) {
+        kadb.push(Buffer().write(bytes), remotePath, "644".toInt(8), System.currentTimeMillis())
     }
 
     override fun close() = kadb.close()

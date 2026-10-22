@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+import com.android.tools.r8.D8
+import com.android.tools.r8.D8Command
+import com.android.tools.r8.OutputMode
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -71,6 +75,48 @@ android {
     testOptions {
         // Robolectric renders the screenshot tests (see ScreenshotTest).
         unitTests.isIncludeAndroidResources = true
+    }
+}
+
+// The label helper (src/helper): plain Java against android.jar, dexed on its own and shipped as
+// an asset. It runs on the TV through app_process, so it must not touch app code or libraries.
+val compileLabelHelper by tasks.registering(JavaCompile::class) {
+    source = fileTree("src/helper/java")
+    classpath = files(androidComponents.sdkComponents.bootClasspath)
+    destinationDirectory = layout.buildDirectory.dir("intermediates/labelHelper/classes")
+    sourceCompatibility = "17"
+    targetCompatibility = "17"
+}
+
+/** D8 ships inside AGP, so this needs no build-tools version of its own. */
+abstract class DexLabelHelper : DefaultTask() {
+    @get:InputFiles abstract val classes: ConfigurableFileCollection
+    @get:InputFiles abstract val androidJar: ConfigurableFileCollection
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction fun dex() {
+        val out = outputDir.get().asFile.also { it.deleteRecursively(); it.mkdirs() }
+        D8.run(
+            D8Command.builder()
+                .addProgramFiles(classes.asFileTree.matching { include("**/*.class") }.files.map { it.toPath() })
+                .addLibraryFiles(androidJar.files.map { it.toPath() })
+                // Old TVs too: the fallback covers OEM blocks, not a dex the TV can't load.
+                .setMinApiLevel(21)
+                .setOutput(out.resolve("label-helper.jar").toPath(), OutputMode.DexIndexed)
+                .build(),
+        )
+    }
+}
+
+val dexLabelHelper by tasks.registering(DexLabelHelper::class) {
+    classes.from(compileLabelHelper)
+    androidJar.from(androidComponents.sdkComponents.bootClasspath)
+    outputDir = layout.buildDirectory.dir("generated/labelHelper/assets")
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(dexLabelHelper, DexLabelHelper::outputDir)
     }
 }
 

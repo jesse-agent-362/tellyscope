@@ -65,15 +65,19 @@ object Parsers {
         return (cpu.ifEmpty { zones }).maxOf { it.second }
     }
 
-    data class Package(val name: String, val uid: Int?)
+    data class Package(val name: String, val uid: Int?, val versionCode: Long? = null)
 
-    /** `pm list packages -U`: `package:com.foo uid:10023` (uid list may be comma-separated). */
+    /**
+     * `pm list packages [--show-versioncode] [-U]`: `package:com.foo versionCode:42 uid:10023`
+     * (uid list may be comma-separated).
+     */
     fun packages(pmList: String): List<Package> = pmList.lineSequence().mapNotNull { line ->
         val l = line.trim()
         if (!l.startsWith("package:")) return@mapNotNull null
         val name = l.removePrefix("package:").substringBefore(' ')
         val uid = l.substringAfter(" uid:", "").substringBefore(',').toIntOrNull()
-        Package(name, uid).takeIf { name.isNotEmpty() }
+        val version = l.substringAfter(" versionCode:", "").substringBefore(' ').toLongOrNull()
+        Package(name, uid, version).takeIf { name.isNotEmpty() }
     }.toList()
 
     data class Process(val pid: Int, val user: String, val rssKb: Long, val cpuPercent: Double, val name: String)

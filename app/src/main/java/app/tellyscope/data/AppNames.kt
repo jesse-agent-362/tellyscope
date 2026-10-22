@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+package app.tellyscope.data
+
+import app.tellyscope.adb.AppLabel
+import app.tellyscope.adb.Parsers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.util.Base64
+
+/** What the app list shows for one package. [icon] is a PNG; null means a letter avatar. */
+class AppName(val label: String, val icon: ByteArray?)
+
+/**
+ * Real app names and icons per TV. The TV's own labels come from `describe` (the label helper) and
+ * are cached in [dir], one file per TV, so the helper only runs again for new or updated apps. When
+ * the helper can't run, [KnownLabels] and then a humanised package id stand in, with no icon, and
+ * that TV isn't asked again until the app restarts.
+ */
+class AppNames(private val dir: File) {
+    /** One helper run at a time; a second caller then finds the first one's results cached. */
+    private val lock = Mutex()
+    private val refused = mutableSetOf<String>()
+    /** Asked for and not described (no readable app info): don't run the helper again just for these. */
+    private val unanswered = mutableSetOf<Pair<String, String>>()
+
+    /**
+     * [tv] identifies the TV (its serial); [packages] is `pm list packages --show-versioncode`.
+     * [describe] runs the helper on that TV for the packages it's given, null if it couldn't.
+     */
+    suspend fun names(
+        tv: String,
+        packages: List<Parsers.Package>,
+        describe: suspend (List<String>) -> List<AppLabel>?,
+    ): Map<String, AppName> = lock.withLock {
+        val file = File(dir, fileName(tv))
+        val cache = load(file).toMutableMap()
+        val stale = packages.filter { p ->
+            val hit = cache[p.name]
+            // Without a versionCode (an older pm) a cached label is as good as it gets.
+            (hit == null || (p.versionCode != null && p.versionCode != hit.versionCode)) && (tv to p.name) !in unanswered
+        }
+        if (stale.isNotEmpty() && tv !in refused) {
+            val fresh = describe(stale.map { it.name })
+            if (fresh == null) {
+                refused += tv
+            } else {
+                fresh.forEach { cache[it.packageName] = it }
+                stale.filter { s -> fresh.none { it.packageName == s.name } }.forEach { unanswered += tv to it.name }
+                save(file, cache.values)
+            }
+        }
+        packages.associate { p ->
+            p.name to (cache[p.name]?.let { AppName(it.label, it.iconPng) } ?: AppName(fallback(p.name), null))
+        }
+    }
+
+    companion object {
+        /** Bundled table first, then `com.google.android.youtube.tv` → "Youtube". */
+        fun fallback(pkg: String): String = KnownLabels[pkg] ?: humanise(pkg)
+
+        private fun humanise(pkg: String): String {
+            val parts = pkg.split('.').filter { it !in setOf("com", "android", "google", "tv", "app", "apps", "org") }
+            return (parts.lastOrNull() ?: pkg).replaceFirstChar(Char::uppercase)
+        }
+
+        private fun fileName(tv: String) = tv.replace(Regex("[^A-Za-z0-9._-]"), "_") + ".tsv"
+
+        /** `package \t versionCode \t label \t base64 PNG`. A damaged line costs that app, not the file. */
+        private fun load(file: File): Map<String, AppLabel> {
+            if (!file.exists()) return emptyMap()
+            return runCatching { file.readLines() }.getOrDefault(emptyList()).mapNotNull { line ->
+                val f = line.split('\t')
+                if (f.size != 4) return@mapNotNull null
+                val version = f[1].toLongOrNull() ?: return@mapNotNull null
+                if (f[0].isEmpty() || f[2].isEmpty()) return@mapNotNull null
+                val icon = f[3].takeIf { it.isNotEmpty() }?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
+                AppLabel(f[0], f[2], version, icon)
+            }.associateBy { it.packageName }
+        }
+
+        private fun save(file: File, labels: Collection<AppLabel>) {
+            file.parentFile?.mkdirs()
+            val tmp = File(file.path + ".tmp")
+            tmp.writeText(
+                labels.joinToString("") { a ->
+                    val label = a.label.replace(Regex("[\t\r\n]"), " ")
+                    val icon = a.iconPng?.let { Base64.getEncoder().encodeToString(it) }.orEmpty()
+                    "${a.packageName}\t${a.versionCode}\t$label\t$icon\n"
+                },
+            )
+            if (!tmp.renameTo(file)) tmp.delete()
+        }
+    }
+}

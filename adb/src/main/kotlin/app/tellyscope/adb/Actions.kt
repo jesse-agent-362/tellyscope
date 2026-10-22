@@ -60,7 +60,7 @@ class Actions(private val shell: AdbShell) {
         return if (r.exitCode == 0 && ok(r.output)) ActionResult.Done(undo) else ActionResult.Failed(r.output.trim())
     }
 
-    private companion object {
+    internal companion object {
         val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+|android")
     }
 }

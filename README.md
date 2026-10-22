@@ -23,6 +23,7 @@ Debloating a TV can break it if done carelessly. Tellyscope is built around thes
 2. **Backup first.** Before the first change on a TV, Tellyscope records the list of enabled packages, so every change can be undone, even after an app reinstall.
 3. **Protected list.** Packages the TV needs to boot, update, show the launcher or accept input are on a protected list. Tellyscope refuses to disable them, and there is no override in the app.
 4. **No root, no exploits.** Only what ADB allows on a stock TV.
+5. **Nothing left on the TV.** To show real app names and icons, Tellyscope copies a small helper to `/data/local/tmp`, runs it once and deletes it. The helper only reads through PackageManager: no writes, no permissions, no network.
 
 ## Project layout
 
@@ -30,6 +31,7 @@ Debloating a TV can break it if done carelessly. Tellyscope is built around thes
 |---|---|
 | `:app` | The Android phone app. Kotlin, Jetpack Compose, Material 3 Expressive. Package `app.tellyscope`. |
 | `:adb` | Pure Kotlin/JVM library on top of [Kadb](https://github.com/flyfishxu/Kadb): connecting, pairing and running commands on a TV. Unit-testable without a device. |
+| `app/src/helper` | The label helper: plain Java, built into a dex in the app's assets and run on the TV with `app_process`. |
 | `:cli` | Desktop smoke test for `:adb` against a real TV (`./gradlew :cli:run --args="stats <tv-ip>"`). Not shipped. |
 
 ## Building
