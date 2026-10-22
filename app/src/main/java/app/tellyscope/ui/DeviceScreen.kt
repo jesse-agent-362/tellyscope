@@ -152,7 +152,11 @@ fun DeviceScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (offline) item { OfflineCard(device, state.now, actions.reconnect) }
+            if (device.state == DeviceState.NotAllowed) {
+                item { NotAllowedCard(actions.reconnect) }
+            } else if (offline) {
+                item { OfflineCard(device, state.now, actions.reconnect) }
+            }
             item { StatGrid(ui.snapshot, Modifier.alpha(if (offline) 0.4f else 1f)) }
             ui.snapshot?.let { snap ->
                 // The :adb source has no per-process list yet; no bars beats an empty card.
@@ -261,6 +265,26 @@ private fun StateDot(state: DeviceState) {
         DeviceState.Offline, DeviceState.NotAllowed -> MaterialTheme.colorScheme.outline
     }
     Box(Modifier.size(10.dp).clip(CircleShape).background(c))
+}
+
+/** The TV refused (revoked access, a reset, or Deny); retrying stopped so the prompt doesn't nag. */
+@Composable
+private fun NotAllowedCard(onConnect: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("The TV didn't allow this phone", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Its debugging access was turned off, reset, or denied. Tellyscope stopped asking so the TV isn't flooded with prompts.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            FilledTonalButton(onClick = onConnect) { Text("Connect again") }
+            Text(
+                "Then press Allow on the TV, and tick \"Always allow from this computer\".",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

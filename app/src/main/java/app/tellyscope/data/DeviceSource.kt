@@ -23,6 +23,9 @@ interface DeviceSource {
     /** Previously paired devices, including offline ones. */
     suspend fun known(): List<Device>
 
+    /** Try a known TV again after it stopped at "not allowed": the TV shows its Allow prompt. */
+    suspend fun reconnect(deviceId: String)
+
     /** Stop reconnecting to a TV and drop it from the remembered list. */
     suspend fun forget(deviceId: String)
 

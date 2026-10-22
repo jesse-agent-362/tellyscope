@@ -147,4 +147,12 @@ class ScreenshotTest {
         ScanUi(scanning = false, noLan = true, hits = listOf(chromecast), rows = mapOf(chromecast.ip to RowState.Found)),
         name = "10_scan_off_wifi",
     )
+
+    @Test fun device_notAllowed() {
+        val base = deviceState()
+        val off = base.devices.last().copy(state = DeviceState.NotAllowed)
+        shot("12_device_not_allowed") {
+            DeviceScreen(base.copy(devices = base.devices.dropLast(1) + off, selectedId = off.id, device = DeviceUi()), DeviceActions())
+        }
+    }
 }

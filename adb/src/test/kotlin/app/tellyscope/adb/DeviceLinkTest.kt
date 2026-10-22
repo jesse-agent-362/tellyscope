@@ -24,14 +24,29 @@ class DeviceLinkTest {
         assertEquals(1, calls)
     }
 
-    @Test fun rememberedDeviceKeepsRetryingThroughNotAllowed() = runTest {
-        // After an app restart the TV may still be waking up: a stalled handshake isn't a refusal.
+    @Test fun rememberedDeviceStopsAfterThreeNotAllowed() = runTest {
+        // Each try shows "Allow debugging?" on the TV again, so a revoked key mustn't loop forever.
         var calls = 0
         val link = DeviceLink("tv", 5555, backgroundScope, open = { _, _ -> calls++; ConnectResult.NotAllowed }, knownGood = true)
         link.connect(); runCurrent()
-        advanceTimeBy(20_001)
-        assertEquals(DeviceState.WAITING, link.state.value)
-        assertTrue(calls >= 4)
+        advanceTimeBy(60_000)
+        assertEquals(DeviceState.NOT_ALLOWED, link.state.value)
+        assertEquals(3, calls)
+    }
+
+    @Test fun unreachableResetsTheNotAllowedCount() = runTest {
+        // A TV waking up: stalls and timeouts interleave, and it keeps retrying until it answers.
+        val answers = ArrayDeque(listOf<ConnectResult>(
+            ConnectResult.NotAllowed, ConnectResult.NotAllowed, ConnectResult.Unreachable("asleep"),
+            ConnectResult.NotAllowed, ConnectResult.NotAllowed,
+        ))
+        var calls = 0
+        val link = DeviceLink("tv", 5555, backgroundScope, knownGood = true,
+            open = { _, _ -> calls++; answers.removeFirstOrNull() ?: ConnectResult.Unreachable("off") })
+        link.connect(); runCurrent()
+        advanceTimeBy(30_001)
+        assertEquals(DeviceState.OFFLINE, link.state.value)
+        assertTrue(calls > 5)
     }
 
     @Test fun dropsToOfflineThenReconnects() = runTest {
@@ -70,7 +85,8 @@ class DeviceLinkTest {
         assertEquals(1, calls)
     }
 
-    @Test fun stalledHandshakeAfterSleepKeepsRetrying() = runTest {
+    @Test fun notAllowedAfterADropStopsAfterThreeTries() = runTest {
+        // Online once, then the key is revoked: three tries, then NOT_ALLOWED instead of a prompt every 5 s.
         var calls = 0
         val link = DeviceLink(
             "tv", 5555, backgroundScope,
@@ -78,9 +94,9 @@ class DeviceLinkTest {
             open = { _, _ -> if (calls++ == 0) ConnectResult.Online(FakeShell()) else ConnectResult.NotAllowed },
         )
         link.connect(); runCurrent()
-        advanceTimeBy(20_001)
-        assertEquals(DeviceState.OFFLINE, link.state.value)
-        assertTrue(calls >= 4)
+        advanceTimeBy(60_000)
+        assertEquals(DeviceState.NOT_ALLOWED, link.state.value)
+        assertEquals(1 + 3, calls)
     }
 
     @Test fun disconnectClosesSessionAndResets() = runTest {

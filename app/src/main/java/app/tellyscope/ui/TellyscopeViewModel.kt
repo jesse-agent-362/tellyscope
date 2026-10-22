@@ -224,6 +224,15 @@ class TellyscopeViewModel(
         if (now.state == DeviceState.Online && before != DeviceState.Online) select(now.id)
     }
 
+    /** Reconnect button: a TV stopped at "not allowed" asks again; an offline one restarts its stats. */
+    fun reconnect(id: String) {
+        viewModelScope.launch {
+            source.reconnect(id)
+            refreshDevices()
+            select(id)
+        }
+    }
+
     fun forget(id: String) {
         viewModelScope.launch {
             source.forget(id)

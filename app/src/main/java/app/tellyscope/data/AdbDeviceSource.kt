@@ -103,6 +103,11 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         scope.launch(Dispatchers.IO) { synchronized(store) { store.save(saved.values.sortedBy { it.host }) } }
     }
 
+    override suspend fun reconnect(deviceId: String) {
+        restored.await()
+        links[deviceId]?.connect()
+    }
+
     override suspend fun forget(deviceId: String) {
         restored.await()
         watchers.remove(deviceId)?.cancel()
@@ -270,7 +275,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         return Device(
             id = id,
             hit = hits.getValue(id),
-            state = if (id in restoring && state != AdbState.ONLINE) DeviceState.Offline else when (state) {
+            // Still waking up after launch reads as offline; a refusal shows as itself.
+            state = if (id in restoring && state in setOf(AdbState.FOUND, AdbState.WAITING, AdbState.OFFLINE)) {
+                DeviceState.Offline
+            } else when (state) {
                 AdbState.WAITING -> DeviceState.Waiting
                 AdbState.ONLINE -> DeviceState.Online
                 AdbState.OFFLINE -> DeviceState.Offline

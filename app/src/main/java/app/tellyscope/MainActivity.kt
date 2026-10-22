@@ -161,7 +161,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 confirm = vm::confirm,
                 cancel = vm::cancel,
                 undo = vm::undo,
-                reconnect = { state.selectedId?.let(vm::select) },
+                reconnect = { state.selectedId?.let(vm::reconnect) },
                 forget = vm::forget,
             ),
         )

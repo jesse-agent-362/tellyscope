@@ -94,6 +94,8 @@ class FakeDeviceSource(
 
     override suspend fun known(): List<Device> = remembered.values.toList()
 
+    override suspend fun reconnect(deviceId: String) = Unit
+
     override suspend fun forget(deviceId: String) {
         remembered.remove(deviceId)
     }
