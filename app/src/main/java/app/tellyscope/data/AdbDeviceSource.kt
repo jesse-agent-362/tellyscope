@@ -24,7 +24,7 @@ import app.tellyscope.adb.Protected
 import app.tellyscope.adb.ProtectedReason
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
-import com.flyfishxu.kadb.exception.AdbPairAuthException
+import app.tellyscope.adb.PairResult
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -203,12 +203,10 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     }
 
     override suspend fun pair(hit: ScanHit, code: String): ConnectResult {
-        try {
-            Connector.pair(hit.ip, pairingPorts[hit.ip] ?: hit.port, code)
-        } catch (e: AdbPairAuthException) {
-            return ConnectResult.WrongCode(e.message ?: "pairing failed")
-        } catch (e: IllegalArgumentException) {
-            return ConnectResult.WrongCode(e.message ?: "pairing code must be 6 digits")
+        when (val r = Connector.pair(hit.ip, pairingPorts[hit.ip] ?: hit.port, code)) {
+            PairResult.Paired -> Unit
+            is PairResult.WrongCode -> return ConnectResult.WrongCode(r.reason)
+            is PairResult.Unreachable -> return ConnectResult.Unreachable(r.reason)
         }
         // After pairing, the connect port is the one mDNS advertised, not the pairing port.
         val connectHit = hits[hit.ip]?.takeIf { it.port != pairingPorts[hit.ip] } ?: hit

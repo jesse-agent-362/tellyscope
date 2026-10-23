@@ -24,3 +24,7 @@ until this file has a section for its version.
 - **Fixed:** Undo and results always go to the TV the action ran on. [#20](../../pull/20)
 - **New:** Debloat in two steps: pick your TV, then review every app it turns off. [#23](../../pull/23)
 - **Improved:** The TV page leads with the TV, its vitals and big action buttons. [#23](../../pull/23)
+- **Fixed:** Adding a TV with a port above 65535 shows a message, not a crash. [#25](../../pull/25)
+- **Fixed:** Losing Wi-Fi while pairing shows a message, not a crash. [#25](../../pull/25)
+- **Fixed:** A broken suggestions list can no longer crash the app. [#25](../../pull/25)
+- **Improved:** Undoing a Turn on in History asks before disabling the app. [#25](../../pull/25)

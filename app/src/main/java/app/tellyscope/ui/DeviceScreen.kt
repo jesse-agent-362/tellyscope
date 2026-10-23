@@ -429,6 +429,18 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
     }
 }
 
+/** Undoing a Turn on disables the app; it names the app and asks like any other Disable. */
+@Composable
+fun UndoDisableDialog(entry: HistoryEntry, onDisable: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Disable ${entry.label}?") },
+        text = { Text(Copy.explain(Action.Disable, entry.label, entry.packageName)) },
+        confirmButton = { Button(onClick = onDisable) { Text(Copy.confirm(Action.Disable)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 /** Restore only touches what Tellyscope turned off; the dialog says so before anything runs. */
 @Composable
 fun RestoreDialog(count: Int, onRestore: () -> Unit, onDismiss: () -> Unit) {
@@ -722,6 +734,10 @@ private fun HistoryList(
     var confirming by rememberSaveable { mutableStateOf(false) }
     val off = HistoryBook.leftDisabled(history).size
     if (confirming) RestoreDialog(off, onRestore = { confirming = false; onRestoreAll() }, onDismiss = { confirming = false })
+    var disabling by remember { mutableStateOf<HistoryEntry?>(null) }
+    disabling?.let { h ->
+        UndoDisableDialog(h, onDisable = { disabling = null; onUndo(h) }, onDismiss = { disabling = null })
+    }
     if (off > 0) {
         OutlinedButton(onClick = { confirming = true }, enabled = !restoring) {
             Text(if (restoring) "Turning apps back on…" else "Restore everything ($off)")
@@ -743,7 +759,7 @@ private fun HistoryList(
             }
             when {
                 h.undoneAt != null -> Text("Undone", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                h.undo != null -> TextButton(onClick = { onUndo(h) }) { Text(Copy.undo(h.undo)) }
+                h.undo != null -> TextButton(onClick = { if (h.undo == Action.Disable) disabling = h else onUndo(h) }) { Text(Copy.undo(h.undo)) }
             }
         }
     }

@@ -86,7 +86,7 @@ fun matches(rule: Map<String, List<String>>?, props: Map<String, String?>): Bool
 
 /** Null unless it is a schema 1 index. Entries with a bad file name or checksum are dropped. */
 fun parseIndex(text: String): ListIndex? = try {
-    val o = JSONObject(text)
+    val o = jsonObject(text)
     if (o.optInt("schema") != SCHEMA) null else ListIndex(
         commit = o.optJSONObject("source")?.optStringOrNull("commit"),
         devices = o.getJSONArray("devices").objects().mapNotNull { d ->
@@ -108,7 +108,7 @@ fun parseIndex(text: String): ListIndex? = try {
 
 /** Null unless it is a schema 1 device file for [id]. Names that aren't package names are dropped. */
 fun parseList(text: String, id: String): DeviceList? = try {
-    val o = JSONObject(text)
+    val o = jsonObject(text)
     val tested = o.optJSONObject("tested")
     fun packages(a: JSONArray?) = a?.objects().orEmpty()
         .map { ListPackage(it.getString("pkg"), it.optStringOrNull("note"), it.optBoolean("optional")) }
@@ -249,6 +249,35 @@ private suspend fun download(url: String): ByteArray = withContext(Dispatchers.I
 }
 
 private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
+
+/** Real lists nest about four deep; org.json parses recursively, so a deeply nested file would overflow the stack. */
+private const val MAX_DEPTH = 32
+
+private fun jsonObject(text: String): JSONObject {
+    if (depth(text) > MAX_DEPTH) throw org.json.JSONException("nested deeper than $MAX_DEPTH")
+    return JSONObject(text)
+}
+
+/** Deepest `{`/`[` nesting outside strings. */
+internal fun depth(text: String): Int {
+    var depth = 0
+    var max = 0
+    var inString = false
+    var escaped = false
+    for (c in text) {
+        when {
+            escaped -> escaped = false
+            inString -> when (c) {
+                '\\' -> escaped = true
+                '"' -> inString = false
+            }
+            c == '"' -> inString = true
+            c == '{' || c == '[' -> { depth++; if (depth > max) max = depth }
+            c == '}' || c == ']' -> depth--
+        }
+    }
+    return max
+}
 
 private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 private fun JSONArray.strings() = (0 until length()).map { getString(it) }

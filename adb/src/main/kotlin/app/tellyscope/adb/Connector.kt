@@ -29,6 +29,13 @@ sealed interface ConnectResult {
     data class Unreachable(val reason: String) : ConnectResult
 }
 
+sealed interface PairResult {
+    data object Paired : PairResult
+    data class WrongCode(val reason: String) : PairResult
+    /** The pairing port refused, timed out or dropped mid-handshake. */
+    data class Unreachable(val reason: String) : PairResult
+}
+
 /**
  * Opens ADB connections with one persisted host key, so the TV's "always allow" survives restarts.
  * Call [init] once per process before anything else.
@@ -52,6 +59,8 @@ object Connector {
      * [allowWaitMs]; the UI shows WAITING for that whole time. Cancelling it closes the attempt.
      */
     suspend fun connect(host: String, port: Int, allowWaitMs: Int = ALLOW_WAIT_MS): ConnectResult {
+        // InetSocketAddress throws IllegalArgumentException outside this range.
+        if (port !in 1..65535) return ConnectResult.Unreachable("port $port is not between 1 and 65535")
         // Probe TCP first: a refused or silent port is "unreachable", not "not allowed".
         try {
             runInterruptible(Dispatchers.IO) { Socket().use { it.connect(InetSocketAddress(host, port), TCP_TIMEOUT_MS) } }
@@ -77,10 +86,24 @@ object Connector {
         }
     }
 
-    /** Android 11+ wireless debugging: pair once with the 6-digit code, then [connect] to the connect port. */
-    suspend fun pair(host: String, pairingPort: Int, code: String) {
-        require(code.length == 6 && code.all(Char::isDigit)) { "pairing code must be 6 digits" }
-        Kadb.pair(host, pairingPort, code)
+    /**
+     * Android 11+ wireless debugging: pair once with the 6-digit code, then [connect] to the connect
+     * port. Never throws, except to cancel.
+     */
+    suspend fun pair(host: String, pairingPort: Int, code: String): PairResult {
+        if (code.length != 6 || !code.all(Char::isDigit)) return PairResult.WrongCode("pairing code must be 6 digits")
+        if (pairingPort !in 1..65535) return PairResult.Unreachable("port $pairingPort is not between 1 and 65535")
+        return try {
+            Kadb.pair(host, pairingPort, code)
+            PairResult.Paired
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AdbPairAuthException) {
+            PairResult.WrongCode(e.message ?: "pairing failed")
+        } catch (e: Exception) {
+            // A Wi-Fi drop mid-handshake surfaces as an IOException, or as Kadb's IllegalStateException.
+            PairResult.Unreachable(e.message ?: e.javaClass.simpleName)
+        }
     }
 
     private fun Throwable.isAuthFailure(): Boolean =

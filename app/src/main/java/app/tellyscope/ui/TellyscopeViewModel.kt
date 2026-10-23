@@ -243,6 +243,7 @@ class TellyscopeViewModel(
         val m = Regex("""^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$""").find(text.trim())
             ?: return "That doesn't look like an IP address. It should look like four numbers with dots, like the one in your TV's network settings."
         val port = m.groupValues[2].toIntOrNull() ?: 5555
+        if (port !in 1..65535) return "The port after the colon should be a number from 1 to 65535, like 5555."
         val kind = if (port == 5555) app.tellyscope.data.ScanKind.Classic else app.tellyscope.data.ScanKind.Wireless
         val hit = ScanHit(m.groupValues[1], port, kind, null, null)
         _state.update { s ->

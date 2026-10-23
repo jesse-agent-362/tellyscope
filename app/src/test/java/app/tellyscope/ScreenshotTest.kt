@@ -69,6 +69,7 @@ import java.io.RandomAccessFile
 import java.nio.file.Files
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -231,6 +232,28 @@ class ScreenshotTest {
             Unit
         }
         shot("07_device_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+    }
+
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun history_undoOfTurnOnAsksFirst() {
+        val turnedOn = HistoryEntry(3, xgimi.ip, now - 20_000, Action.Enable, "com.xgimi.assistant", "XGIMI Assistant", Action.Disable, null)
+        val undone = mutableListOf<HistoryEntry>()
+        val openAndTap = {
+            compose.onNodeWithText("Apps").performClick()
+            compose.onNodeWithText("History").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            // The button says what it does, and a tap only asks.
+            compose.onNodeWithText("Disable").performClick()
+            Unit
+        }
+        shot("16_history_undo_disable", screen = true, before = openAndTap) {
+            DeviceScreen(deviceState { copy(history = listOf(turnedOn)) }, DeviceActions(undo = { undone += it }))
+        }
+        compose.onNodeWithText("Disable XGIMI Assistant?").assertExists()
+        assertEquals(emptyList<HistoryEntry>(), undone)
+        compose.onNodeWithText("Yes, disable it").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(listOf(turnedOn), undone)
     }
 
     /** A real TV's app list: no per-process stats yet, so the apps sit right under the stat grid. */

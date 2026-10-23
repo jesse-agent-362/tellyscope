@@ -51,8 +51,15 @@ object Copy {
         Action.Open -> "Opened $app"
     }
 
-    /** Force-stop has no true undo; the button says what it actually does. */
-    fun undo(undo: Action) = if (undo == Action.Open) "Open again" else "Undo"
+    /**
+     * Force-stop has no true undo, and undoing a Turn on disables the app; the button says what it
+     * actually does.
+     */
+    fun undo(undo: Action) = when (undo) {
+        Action.Open -> "Open again"
+        Action.Disable -> button(Action.Disable)
+        else -> "Undo"
+    }
 
     fun ago(at: Long, now: Long): String {
         val s = ((now - at) / 1000).coerceAtLeast(0)

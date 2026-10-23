@@ -12,7 +12,9 @@ import app.tellyscope.data.ListGroup
 import app.tellyscope.data.ListPackage
 import app.tellyscope.data.keepRefuses
 import app.tellyscope.data.matches
+import app.tellyscope.data.depth
 import app.tellyscope.data.parseIndex
+import app.tellyscope.data.parseList
 import app.tellyscope.data.suggest
 import app.tellyscope.data.withKeep
 import kotlinx.coroutines.test.runTest
@@ -157,4 +159,12 @@ class DeviceListsTest {
     }
 
     private fun sha256(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
+    @Test fun deeplyNestedJsonIsRejectedNotACrash() {
+        // org.json parses recursively: this used to throw StackOverflowError on every TV page open.
+        val bomb = "[".repeat(200_000) + "]".repeat(200_000)
+        assertNull(parseList("""{"schema":1,"id":"x","name":"x","groups":$bomb}""", "x"))
+        assertNull(parseIndex("""{"schema":1,"devices":$bomb}"""))
+        // Brackets inside strings don't count.
+        assertEquals(2, depth("""{"a":["[[[{{{\"]"]}"""))
+    }
 }
