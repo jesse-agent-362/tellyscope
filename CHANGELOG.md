@@ -19,3 +19,5 @@ until this file has a section for its version.
 - **Fixed:** Processes, screen state, connections and data used now show on real TVs. [#17](../../pull/17)
 - **Fixed:** A TV on Wi-Fi no longer shows its connection as Ethernet. [#17](../../pull/17)
 - **New:** An icon shows whether each device is a TV, projector, Fire TV or stick. [#18](../../pull/18)
+- **Improved:** The confirm before disabling suggested apps names every app. [#19](../../pull/19)
+- **Improved:** System updaters, Wi-Fi resources and Chrome's library are now protected. [#19](../../pull/19)
