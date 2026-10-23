@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -34,6 +35,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.tellyscope.data.AdbDeviceSource
 import app.tellyscope.data.AndroidPhoneStorage
 import app.tellyscope.data.FakeDeviceSource
+import app.tellyscope.data.UpdateCheck
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.DebloatScreen
@@ -46,9 +48,11 @@ import app.tellyscope.ui.RemoteScreen
 import app.tellyscope.ui.ScanScreen
 import app.tellyscope.ui.SettingsScreen
 import app.tellyscope.ui.TellyscopeViewModel
+import app.tellyscope.ui.UpdateDialog
 import app.tellyscope.ui.theme.TellyscopeTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +75,7 @@ class MainActivity : ComponentActivity() {
                                 TellyscopeViewModel(
                                     scenario?.let(::FakeDeviceSource) ?: AdbDeviceSource(applicationContext),
                                     AndroidPhoneStorage(applicationContext),
+                                    updates = if (scenario != null) null else updateCheck(),
                                 )
                             }
                         },
@@ -79,6 +84,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun updateCheck(): UpdateCheck {
+        @Suppress("DEPRECATION") // the flags overload is API 33+
+        val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        // Alpha builds install as app.tellyscope.alpha (app/build.gradle.kts).
+        return UpdateCheck(File(filesDir, "updates.properties"), version, alpha = packageName.endsWith(".alpha"))
     }
 
     /**
@@ -123,6 +135,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TellyscopeApp(vm: TellyscopeViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val browser = LocalUriHandler.current
     val snackbar = remember { SnackbarHostState() }
     var adding by rememberSaveable { mutableStateOf(false) }
     var remote by rememberSaveable { mutableStateOf(false) }
@@ -135,6 +148,10 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::push) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream"), vm::saveTo)
     val saveScreenshot = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png"), vm::screenshotTo)
+
+    state.update?.let { u ->
+        UpdateDialog(u, onGet = { vm.updateLater(); runCatching { browser.openUri(u.url) } }, onLater = vm::updateLater, onSkip = vm::skipUpdate)
+    }
 
     Snackbars(snackbar, vm.done, vm.notice, vm::doneShown, vm::noticeShown) { vm.undo(it.entry, it.deviceId) }
 
@@ -170,7 +187,14 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         AdvancedScreen(state, back = { advanced = false }, snackbar = snackbar)
     } else if (settings) {
         BackHandler { settings = false }
-        SettingsScreen(state.listSource, onListSource = vm::setListSource, back = { settings = false }, snackbar = snackbar)
+        SettingsScreen(
+            state.listSource,
+            onListSource = vm::setListSource,
+            checkUpdates = state.checkUpdates,
+            onCheckUpdates = vm::setCheckUpdates,
+            back = { settings = false },
+            snackbar = snackbar,
+        )
     } else if (debloat) {
         // Its own back handler steps back from the review to the model before leaving.
         DebloatScreen(

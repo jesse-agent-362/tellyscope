@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -24,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /** App-wide choices, not tied to one TV. */
@@ -44,6 +47,9 @@ fun SettingsScreen(
     /** The user's own debloat-list source; null for tellyscope-devices. */
     listSource: String?,
     onListSource: (String?) -> Unit,
+    /** Null hides the switch: this build doesn't check (screenshots). */
+    checkUpdates: Boolean?,
+    onCheckUpdates: (Boolean) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
 ) {
@@ -73,6 +79,25 @@ fun SettingsScreen(
                             Text(Copy.listSource(listSource), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             TextButton(onClick = { editing = true }) { Text("Change") }
                         }
+                    }
+                }
+            }
+            if (checkUpdates != null) item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .toggleable(checkUpdates, role = Role.Switch, onValueChange = onCheckUpdates)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Check for updates", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Once a day, ask GitHub whether a newer Tellyscope is out. Nothing is downloaded.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(checked = checkUpdates, onCheckedChange = null)
                     }
                 }
             }

@@ -34,7 +34,10 @@ import app.tellyscope.data.Snapshot
 import app.tellyscope.data.Suggestions
 import app.tellyscope.data.TvSettings
 import app.tellyscope.data.TvTweaks
+import app.tellyscope.data.Update
+import app.tellyscope.data.UpdateCheck
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -123,6 +126,10 @@ data class UiState(
     val restarting: Map<String, Restart> = emptyMap(),
     /** The user's own debloat-list source; null for tellyscope-devices. */
     val listSource: String? = null,
+    /** The once-a-day look at GitHub for a newer release; null when this build has none (screenshots, tests). */
+    val checkUpdates: Boolean? = null,
+    /** A newer release to offer; cleared once the user answers. */
+    val update: Update? = null,
 ) {
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
@@ -151,6 +158,7 @@ class TellyscopeViewModel(
     private val storage: PhoneStorage? = null,
     private val allowTimeoutMs: Long = 60_000,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val updates: UpdateCheck? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(UiState(now = clock()))
@@ -194,6 +202,14 @@ class TellyscopeViewModel(
                 delay(1_000)
                 _state.update { it.copy(now = clock()) }
                 if (++tick % 3 == 0) refreshDevices()
+            }
+        }
+        updates?.let { u ->
+            viewModelScope.launch(Dispatchers.IO) {
+                _state.update { it.copy(checkUpdates = u.enabled) }
+                // Null on any failure: no offer looks the same as no newer release.
+                val found = u.check()
+                _state.update { it.copy(update = found) }
             }
         }
         rescan()
@@ -762,6 +778,24 @@ class TellyscopeViewModel(
             _notice.value = Copy.listSource(now)
             if (id != null) loadLists(id)
         }
+    }
+
+    /** "Get it" or "Later": the offer goes away until tomorrow's check. */
+    fun updateLater() {
+        _state.update { it.copy(update = null) }
+    }
+
+    /** "Skip this version": never offered again; a later release still is. */
+    fun skipUpdate() {
+        val version = _state.value.update?.version ?: return
+        _state.update { it.copy(update = null) }
+        viewModelScope.launch(Dispatchers.IO) { updates?.skip(version) }
+    }
+
+    fun setCheckUpdates(on: Boolean) {
+        val u = updates ?: return
+        _state.update { it.copy(checkUpdates = on) }
+        viewModelScope.launch(Dispatchers.IO) { u.enabled = on }
     }
 
     /** Disables the ticked suggestions one by one, each recorded in History with its own undo. */

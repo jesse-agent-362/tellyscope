@@ -295,7 +295,7 @@ fun sourceName(base: String): String {
 private const val MAX_BYTES = 2 shl 20 // 2 MiB; the index is ~60 KB
 
 /** Plain GET with short timeouts, so a slow network falls back to the cache rather than hanging. */
-private suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
+internal suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
     val c = URL(url).openConnection() as HttpURLConnection
     c.connectTimeout = 10_000
     c.readTimeout = 10_000
