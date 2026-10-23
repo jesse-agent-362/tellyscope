@@ -83,7 +83,7 @@ class DeviceListsTest {
         val lists = DeviceLists(tmp.root, served("index.json" to index(sha = "f".repeat(64)), "devices/acme-55.json" to device))
         val entry = lists.index()!!.devices.first()
         assertNull(lists.list(entry))
-        assertFalse(tmp.root.resolve("acme-55.json").exists())
+        assertFalse(tmp.root.resolve("devices/acme-55.json").exists())
 
         val good = DeviceLists(tmp.newFolder(), served("index.json" to index(), "devices/acme-55.json" to device))
         assertEquals("Acme 55", good.list(good.index()!!.devices.first())?.name)

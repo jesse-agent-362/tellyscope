@@ -185,10 +185,10 @@ class DeviceLists(
 
     /** The device file for [entry], from cache or the network. Null when the bytes don't match its sha256. */
     suspend fun list(entry: ListEntry): DeviceList? = withContext(Dispatchers.IO) {
-        val cache = File(dir, entry.file.substringAfter('/'))
+        val cache = File(dir, entry.file) // lists/devices/<id>.json, apart from index.json
         val bytes = cache.takeIf { it.exists() }?.readBytes()?.takeIf { sha256(it) == entry.sha256 }
             ?: attempt { fetch(LISTS_BASE + entry.file) }?.takeIf { sha256(it) == entry.sha256 }
-                ?.also { dir.mkdirs(); cache.writeBytes(it) }
+                ?.also { cache.parentFile?.mkdirs(); cache.writeBytes(it) }
         bytes?.let { parseList(it.decodeToString(), entry.id) }
     }
 
