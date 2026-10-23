@@ -179,6 +179,7 @@ object Copy {
 
     const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
     const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
+    const val PAIR_INSTEAD = "The TV didn't let this phone in yet. Pair it once with the code from the TV."
 
     data class Health(val ok: Boolean, val text: String)
 

@@ -29,6 +29,7 @@ import app.tellyscope.data.PhoneStorage
 import app.tellyscope.data.PickedApp
 import app.tellyscope.data.ScanEvent
 import app.tellyscope.data.ScanHit
+import app.tellyscope.data.ScanKind
 import app.tellyscope.data.ScanProgress
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.Suggestions
@@ -246,11 +247,16 @@ class TellyscopeViewModel(
         // the rest answer NeedsPairing and get the code field.
         setRow(hit.ip, RowState.Waiting(clock()))
         viewModelScope.launch {
-            when (val r = withTimeoutOrNull(allowTimeoutMs) { source.connect(hit) }) {
-                is ConnectResult.Online -> online(r.device)
-                ConnectResult.NeedsPairing -> setRow(hit.ip, RowState.Code())
-                null, ConnectResult.NotAllowed, is ConnectResult.Unreachable, is ConnectResult.WrongCode ->
-                    setRow(hit.ip, RowState.NotAllowed)
+            val r = withTimeoutOrNull(allowTimeoutMs) { source.connect(hit) }
+            when {
+                r is ConnectResult.Online -> online(r.device)
+                r == ConnectResult.NeedsPairing -> setRow(hit.ip, RowState.Code())
+                // A wireless-debugging TV never shows the Allow box: whatever went wrong, the way in is the code.
+                hit.kind == ScanKind.Wireless -> setRow(hit.ip, RowState.Code(
+                    error = if (r is ConnectResult.Unreachable) Copy.UNREACHABLE else Copy.PAIR_INSTEAD,
+                    detail = (r as? ConnectResult.Unreachable)?.message ?: (r as? ConnectResult.WrongCode)?.message,
+                ))
+                else -> setRow(hit.ip, RowState.NotAllowed)
             }
         }
     }
@@ -267,7 +273,7 @@ class TellyscopeViewModel(
                 is ConnectResult.Online -> online(r.device)
                 is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = Copy.WRONG_CODE, detail = r.message))
                 is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = Copy.UNREACHABLE, detail = r.message))
-                ConnectResult.NotAllowed -> setRow(hit.ip, RowState.NotAllowed)
+                ConnectResult.NotAllowed -> setRow(hit.ip, row.copy(busy = false, error = Copy.PAIR_INSTEAD))
                 ConnectResult.NeedsPairing -> setRow(hit.ip, row.copy(busy = false, error = "The TV still wants a code. Check the number on screen and try again."))
             }
         }
