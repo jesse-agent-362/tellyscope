@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.2.2 — 2026-10-23
+
 - **Improved:** Checks for a new version every 30 minutes, not 6 hours. [#53](../../pull/53)
 - **Fixed:** Pairing finds the port the TV shows now, after the dialog reopens. [#54](../../pull/54)
 
