@@ -168,6 +168,40 @@ class DeviceLists(
     private val lock = Mutex()
     private var index: ListIndex? = null
     private val picks = File(dir, "picks.tsv")
+    private val sourceFile = File(dir, "source.txt")
+
+    /** The folder holding `index.json`: one the user set, else [LISTS_BASE]. */
+    val base: String get() = custom() ?: LISTS_BASE
+
+    /** The user's own source, or null for tellyscope-devices. */
+    @Synchronized
+    fun custom(): String? = sourceFile.takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null }
+
+    /**
+     * Points the lists at [url], or back at [LISTS_BASE] with null. The new source must answer
+     * with a schema 1 index first; otherwise nothing changes. The cached lists are dropped, so
+     * nothing from the old source lingers; picks stay, and a pick the new source lacks falls
+     * back to matching.
+     */
+    suspend fun setSource(url: String?): SourceResult = lock.withLock {
+        val next = if (url == null) LISTS_BASE else normalize(url) ?: return@withLock SourceResult.NotHttps
+        val text = attempt { fetch(next + "index.json") }?.decodeToString()
+        // Going back to the default always works, offline too: its lists load once online.
+        if (text == null && url != null) return@withLock SourceResult.Unreachable
+        val parsed = text?.let(::parseIndex)
+        if (text != null && parsed == null) return@withLock SourceResult.NotAList
+        withContext(Dispatchers.IO) {
+            File(dir, "index.json").delete()
+            File(dir, "devices").deleteRecursively()
+            dir.mkdirs()
+            if (text != null) File(dir, "index.json").writeText(text)
+            synchronized(this@DeviceLists) {
+                if (next == LISTS_BASE) sourceFile.delete() else sourceFile.writeText(next)
+            }
+        }
+        index = parsed
+        SourceResult.Ok
+    }
 
     /**
      * Fetched once per process; later calls reuse it. Offline, the cached copy is returned and the
@@ -177,7 +211,7 @@ class DeviceLists(
         index ?: withContext(Dispatchers.IO) {
             dir.mkdirs()
             val cache = File(dir, "index.json")
-            val text = attempt { fetch(LISTS_BASE + "index.json") }?.decodeToString()
+            val text = attempt { fetch(base + "index.json") }?.decodeToString()
             text?.let(::parseIndex)?.also { cache.writeText(text); index = it }
                 ?: cache.takeIf { it.exists() }?.readText()?.let(::parseIndex)
         }
@@ -187,7 +221,7 @@ class DeviceLists(
     suspend fun list(entry: ListEntry): DeviceList? = withContext(Dispatchers.IO) {
         val cache = File(dir, entry.file) // lists/devices/<id>.json, apart from index.json
         val bytes = cache.takeIf { it.exists() }?.readBytes()?.takeIf { sha256(it) == entry.sha256 }
-            ?: attempt { fetch(LISTS_BASE + entry.file) }?.takeIf { sha256(it) == entry.sha256 }
+            ?: attempt { fetch(base + entry.file) }?.takeIf { sha256(it) == entry.sha256 }
                 ?.also { cache.parentFile?.mkdirs(); cache.writeBytes(it) }
         bytes?.let { parseList(it.decodeToString(), entry.id) }
     }
@@ -222,6 +256,32 @@ class DeviceLists(
     } catch (_: Exception) {
         null
     }
+}
+
+enum class SourceResult { Ok, NotHttps, Unreachable, NotAList }
+
+const val NOT_A_LIST = "this source isn't a Tellyscope list"
+
+/**
+ * An `https://` folder address ending in `/`, or null for anything else. A pasted `index.json`
+ * address is cut back to its folder.
+ */
+fun normalize(url: String): String? {
+    val u = url.trim().removeSuffix("index.json")
+    val parsed = try {
+        java.net.URI(u)
+    } catch (_: java.net.URISyntaxException) {
+        return null
+    }
+    if (!parsed.scheme.equals("https", ignoreCase = true) || parsed.host.isNullOrEmpty() || parsed.query != null || parsed.fragment != null) return null
+    return if (u.endsWith("/")) u else "$u/"
+}
+
+/** How a source reads on screen: `github.com/owner/repo` for raw GitHub addresses, else host and path. */
+fun sourceName(base: String): String {
+    val rest = base.substringAfter("://").trimEnd('/')
+    val raw = "raw.githubusercontent.com/"
+    return if (rest.startsWith(raw)) "github.com/" + rest.removePrefix(raw).split('/').take(2).joinToString("/") else rest
 }
 
 private const val MAX_BYTES = 2 shl 20 // 2 MiB; the index is ~60 KB

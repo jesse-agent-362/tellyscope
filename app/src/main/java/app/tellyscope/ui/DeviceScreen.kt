@@ -220,7 +220,9 @@ fun DeviceScreen(
                 item {
                     ActionTiles(
                         actions,
-                        canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready,
+                        // A source of the user's own that stopped answering must still be reachable to reset.
+                        canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready ||
+                            (ui.lists == Suggestions.Unavailable && state.listSource != null),
                         disabling = ui.busy == DISABLING,
                     )
                 }

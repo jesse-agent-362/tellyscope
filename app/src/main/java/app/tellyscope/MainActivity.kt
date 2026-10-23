@@ -174,6 +174,8 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             onDisable = vm::disableSuggested,
             back = { debloat = false },
             snackbar = snackbar,
+            source = state.listSource,
+            onSource = vm::setListSource,
         )
     } else {
         DeviceScreen(

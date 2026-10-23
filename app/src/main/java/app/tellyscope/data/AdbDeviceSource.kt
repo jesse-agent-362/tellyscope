@@ -412,6 +412,17 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         keep.remove(key)
     }
 
+    override suspend fun listSource(): String? = lists.custom()
+
+    override suspend fun setListSource(url: String?) {
+        when (lists.setSource(url)) {
+            SourceResult.Ok -> keep.clear() // the old source's keep entries
+            SourceResult.NotHttps -> throw IllegalStateException("the address has to start with https://")
+            SourceResult.Unreachable -> throw IllegalStateException("couldn't reach that address. Check it and the phone's internet")
+            SourceResult.NotAList -> throw IllegalStateException(NOT_A_LIST)
+        }
+    }
+
     private class Resolved(val index: ListIndex?, val entry: ListEntry?, val list: DeviceList?, val sdk: Int?)
 
     /** This TV's list (picked, else matched), with its keep entries recorded for [apps] and [act]. */

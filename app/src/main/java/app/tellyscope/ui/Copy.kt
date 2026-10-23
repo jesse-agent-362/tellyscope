@@ -10,6 +10,7 @@ import app.tellyscope.data.AppNames
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.Snapshot
 import app.tellyscope.data.TvSettings
+import app.tellyscope.data.sourceName
 import java.text.SimpleDateFormat
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -66,6 +67,10 @@ object Copy {
         Action.ClearCaches -> "Cleared $app"
         Action.Home -> "Made $app your home screen"
     }
+
+    /** Where the lists come from, for the Debloat screen and the snackbar after a change. */
+    fun listSource(custom: String?) =
+        if (custom == null) "Lists from tellyscope-devices, built from cleanyourtv" else "Lists from ${sourceName(custom)}"
 
     fun makeHome(app: String) = "Make $app your home screen"
 

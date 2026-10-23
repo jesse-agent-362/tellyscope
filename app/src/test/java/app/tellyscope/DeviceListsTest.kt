@@ -12,6 +12,9 @@ import app.tellyscope.data.ListGroup
 import app.tellyscope.data.ListPackage
 import app.tellyscope.data.keepRefuses
 import app.tellyscope.data.matches
+import app.tellyscope.data.SourceResult
+import app.tellyscope.data.normalize
+import app.tellyscope.data.sourceName
 import app.tellyscope.data.depth
 import app.tellyscope.data.parseIndex
 import app.tellyscope.data.parseList
@@ -167,5 +170,69 @@ class DeviceListsTest {
         assertNull(parseIndex("""{"schema":1,"devices":$bomb}"""))
         // Brackets inside strings don't count.
         assertEquals(2, depth("""{"a":["[[[{{{\"]"]}"""))
+    }
+
+    private val fork = "https://raw.githubusercontent.com/someone/my-lists/main/"
+
+    @Test fun aForkThatServesSchemaOneBecomesTheSourceAndDropsTheOldCache() = runTest {
+        val served = mapOf(
+            LISTS_BASE + "index.json" to index(), LISTS_BASE + "devices/acme-55.json" to device,
+            fork + "index.json" to index(sha = "f".repeat(64)),
+        )
+        val fetched = mutableListOf<String>()
+        val fetch: suspend (String) -> ByteArray = { url -> fetched += url; served[url] ?: throw IOException("404 $url") }
+        val lists = DeviceLists(tmp.root, fetch)
+        assertNotNull(lists.list(lists.index()!!.devices.first()))
+        assertTrue(tmp.root.resolve("devices/acme-55.json").exists())
+
+        assertEquals(SourceResult.Ok, lists.setSource(fork.removeSuffix("/") + "/index.json"))
+        assertEquals(fork, lists.custom())
+        assertFalse(tmp.root.resolve("devices").exists())
+        // Survives a restart, and every later fetch goes to the fork.
+        val again = DeviceLists(tmp.root, fetch)
+        assertEquals(fork, again.base)
+        fetched.clear()
+        assertNull(again.list(again.index()!!.devices.first())) // the fork's checksum doesn't match
+        assertTrue(fetched.isNotEmpty() && fetched.all { it.startsWith(fork) })
+
+        assertEquals(SourceResult.Ok, again.setSource(null))
+        assertNull(again.custom())
+        assertEquals(LISTS_BASE, again.base)
+    }
+
+    @Test fun aSourceThatIsntATellyscopeListChangesNothing() = runTest {
+        val lists = DeviceLists(tmp.root, served("index.json" to index()))
+        lists.index()
+        val other: suspend (String) -> ByteArray = { url ->
+            when (url) {
+                fork + "index.json" -> """{"schema": 2, "devices": []}""".toByteArray()
+                LISTS_BASE + "index.json" -> index()
+                else -> throw IOException("404 $url")
+            }
+        }
+        val l = DeviceLists(tmp.root, other)
+        assertEquals(SourceResult.NotAList, l.setSource(fork))
+        assertEquals(SourceResult.NotHttps, l.setSource("http://example.com/lists/"))
+        assertEquals(SourceResult.Unreachable, l.setSource("https://example.com/nothing/"))
+        assertNull(l.custom())
+        assertTrue(tmp.root.resolve("index.json").exists())
+    }
+
+    @Test fun resetToDefaultWorksOffline() = runTest {
+        val lists = DeviceLists(tmp.root) { url -> if (url == fork + "index.json") index() else throw IOException("offline") }
+        assertEquals(SourceResult.Ok, lists.setSource(fork))
+        assertEquals(SourceResult.Ok, lists.setSource(null))
+        assertNull(lists.custom())
+        assertNull(lists.index()) // nothing from the fork is left to fall back on
+    }
+
+    @Test fun sourceAddressesAreHttpsFoldersAndReadShort() {
+        assertEquals("https://example.com/lists/", normalize(" https://example.com/lists "))
+        assertEquals("https://example.com/lists/", normalize("https://example.com/lists/index.json"))
+        assertNull(normalize("http://example.com/lists/"))
+        assertNull(normalize("file:///sdcard/lists/"))
+        assertNull(normalize("https://example.com/lists/?x=1"))
+        assertEquals("github.com/someone/my-lists", sourceName(fork))
+        assertEquals("example.com/lists", sourceName("https://example.com/lists/"))
     }
 }

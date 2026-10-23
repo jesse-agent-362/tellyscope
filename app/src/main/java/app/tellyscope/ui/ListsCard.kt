@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.Suggested
 import app.tellyscope.data.Suggestions
+import app.tellyscope.data.sourceName
 
 /** Body of the "Suggested for this TV" section: one line on what the list offers; the Debloat tile is the way in. */
 @Composable
@@ -91,8 +92,13 @@ fun DebloatScreen(
     onDisable: (List<String>) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    /** The user's own list source, null for the default. */
+    source: String? = null,
+    onSource: (String?) -> Unit = {},
 ) {
     val ready = lists as? Suggestions.Ready
+    var editing by rememberSaveable { mutableStateOf(false) }
+    if (editing) SourceDialog(source, onSave = { editing = false; onSource(it) }, onDismiss = { editing = false })
     val devices = when (lists) {
         is Suggestions.Pick -> lists.devices
         is Suggestions.Ready -> lists.devices
@@ -168,6 +174,15 @@ fun DebloatScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            Copy.listSource(source),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { editing = true }) { Text("Change") }
+                    }
                     // Empty while a picked list reloads, if they came back to change it.
                     if (devices.isEmpty()) Muted("Loading the lists…")
                     else if (shown.isEmpty()) Muted("No list matches \"${q.trim()}\".")
@@ -202,6 +217,12 @@ fun DebloatScreen(
                     Text(
                         "From the list for ${showing.list.name}. Untick anything you use. Nothing is deleted: each app is hidden, and History can turn it back on.",
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // Nobody should debloat from a list they didn't mean to use.
+                    if (source != null) Text(
+                        "This list comes from ${sourceName(source)}, not tellyscope-devices.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                     if (!showing.sdkMatches) Muted(
                         showing.list.testedOs?.let { "Tested on $it, not this TV's Android version, so nothing is ticked. Tick only what you know you don't use." }
@@ -255,6 +276,29 @@ internal fun DisableDialog(apps: List<Suggested>, onDisable: () -> Unit, onDismi
             }
         },
         confirmButton = { Button(onClick = onDisable) { Text("Yes, disable them") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Edits the list source: an HTTPS folder holding `index.json`, or back to the default. */
+@Composable
+private fun SourceDialog(source: String?, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
+    var url by rememberSaveable { mutableStateOf(source.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Where the lists come from") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "To use your own lists, fork tellyscope-devices, edit it, and paste the address of the folder that holds index.json, " +
+                        "like https://raw.githubusercontent.com/you/tellyscope-devices/main/. Protected apps stay protected whatever a list says.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(url, { url = it }, placeholder = { Text("https://…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (source != null) TextButton(onClick = { onSave(null) }) { Text("Reset to default") }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(url) }, enabled = url.isNotBlank()) { Text("Use these lists") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

@@ -92,6 +92,16 @@ interface DeviceSource {
     /** "Pick your TV": use list [listId] for this TV from now on. */
     suspend fun pickList(deviceId: String, listId: String)
 
+    /** Where the debloat lists come from, as the user set it; null for tellyscope-devices. */
+    suspend fun listSource(): String?
+
+    /**
+     * Reads the lists from [url] (the folder holding `index.json`) from now on, or from
+     * tellyscope-devices again with null. Throws with the reason, changing nothing, when it
+     * isn't HTTPS, can't be reached or isn't a Tellyscope list.
+     */
+    suspend fun setListSource(url: String?)
+
     /** One remote key. False when the TV answered with an error; throws when it's gone. */
     suspend fun press(deviceId: String, key: RemoteKey): Boolean
 

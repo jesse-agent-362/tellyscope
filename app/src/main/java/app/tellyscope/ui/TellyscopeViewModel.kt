@@ -121,6 +121,8 @@ data class UiState(
     val now: Long = System.currentTimeMillis(),
     /** TVs asked to restart, by id. */
     val restarting: Map<String, Restart> = emptyMap(),
+    /** The user's own debloat-list source; null for tellyscope-devices. */
+    val listSource: String? = null,
 ) {
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
@@ -182,7 +184,8 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             // Remembered TVs open straight to their page (offline until they answer).
             val known = source.known()
-            _state.update { it.copy(devices = known) }
+            val lists = runCatching { source.listSource() }.getOrNull()
+            _state.update { it.copy(devices = known, listSource = lists) }
             if (_state.value.selectedId == null) known.firstOrNull()?.let { select(it.id) }
         }
         viewModelScope.launch {
@@ -355,7 +358,8 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             source.forget(id)
             val known = source.known()
-            _state.update { it.copy(devices = known) }
+            val lists = runCatching { source.listSource() }.getOrNull()
+            _state.update { it.copy(devices = known, listSource = lists) }
             // Next TV, online ones first; none left means back to the scan screen.
             select((known.firstOrNull { it.state == DeviceState.Online } ?: known.firstOrNull())?.id)
         }
@@ -734,6 +738,29 @@ class TellyscopeViewModel(
         listsJob = viewModelScope.launch {
             source.pickList(id, listId)
             loadLists(id)
+        }
+    }
+
+    /**
+     * Reads the debloat lists from [url] from now on, or from tellyscope-devices with null, then
+     * reloads this TV's list. A refused source changes nothing and says why.
+     */
+    fun setListSource(url: String?) {
+        val id = _state.value.selectedId
+        listsJob?.cancel()
+        listsJob = viewModelScope.launch {
+            try {
+                source.setListSource(url)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _notice.value = e.message?.replaceFirstChar(Char::uppercase) ?: "That didn't work."
+                return@launch
+            }
+            val now = source.listSource()
+            _state.update { it.copy(listSource = now, device = it.device.copy(lists = null)) }
+            _notice.value = Copy.listSource(now)
+            if (id != null) loadLists(id)
         }
     }
 

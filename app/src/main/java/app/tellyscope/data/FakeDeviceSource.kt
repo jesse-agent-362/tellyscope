@@ -289,6 +289,14 @@ class FakeDeviceSource(
 
     override suspend fun pickList(deviceId: String, listId: String) = Unit
 
+    private var listSource: String? = null
+
+    override suspend fun listSource() = listSource
+
+    override suspend fun setListSource(url: String?) {
+        listSource = url?.let { normalize(it) ?: throw IllegalStateException("the address has to start with https://") }
+    }
+
     override suspend fun press(deviceId: String, key: RemoteKey): Boolean {
         delay(60)
         return true
