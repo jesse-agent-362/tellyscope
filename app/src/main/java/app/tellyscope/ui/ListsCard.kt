@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.ListEntry
+import app.tellyscope.data.Suggested
 import app.tellyscope.data.Suggestions
 
 /** Body of the "Suggested for this TV" section: the TV's list, cut down to what it has. */
@@ -53,7 +54,11 @@ fun SuggestionsBlock(
         else -> emptyList()
     }
     if (picking) PickDialog(devices, onPick = { picking = false; onPick(it) }, onDismiss = { picking = false })
-    if (confirming) DisableDialog(ticked.size, onDisable = { confirming = false; onDisable(ticked.toList()) }, onDismiss = { confirming = false })
+    if (confirming) {
+        // The dialog's list is exactly what gets disabled.
+        val chosen = (lists as? Suggestions.Ready)?.groups.orEmpty().flatMap { it.packages }.filter { it.pkg in ticked }
+        DisableDialog(chosen, onDisable = { confirming = false; onDisable(chosen.map { it.pkg }) }, onDismiss = { confirming = false })
+    }
 
     when (lists) {
         null -> Muted("Looking up this TV's list…")
@@ -138,11 +143,24 @@ fun PickDialog(devices: List<ListEntry>, onPick: (String) -> Unit, onDismiss: ()
 }
 
 @Composable
-private fun DisableDialog(count: Int, onDisable: () -> Unit, onDismiss: () -> Unit) {
+internal fun DisableDialog(apps: List<Suggested>, onDisable: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Disable $count ${if (count == 1) "app" else "apps"}?") },
-        text = { Text("Each one is hidden and stops running. Nothing is deleted; every one shows in History, where you can turn it back on.") },
+        title = { Text("Disable ${apps.size} ${if (apps.size == 1) "app" else "apps"}?") },
+        text = {
+            // Every name, so a list can't slip something in behind a count.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Each one is hidden and stops running. Nothing is deleted; every one shows in History, where you can turn it back on.")
+                LazyColumn(Modifier.heightIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(apps, key = { it.pkg }) { a ->
+                        Column {
+                            Text(a.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(a.pkg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
         confirmButton = { Button(onClick = onDisable) { Text("Yes, disable them") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

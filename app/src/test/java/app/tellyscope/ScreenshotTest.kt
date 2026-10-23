@@ -32,10 +32,12 @@ import app.tellyscope.data.PickedApp
 import app.tellyscope.data.ScanHit
 import app.tellyscope.data.ScanKind
 import app.tellyscope.data.ScanProgress
+import app.tellyscope.data.Suggested
 import app.tellyscope.ui.DeviceActions
 import app.tellyscope.ui.DeviceScreen
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.DeviceUi
+import app.tellyscope.ui.DisableDialog
 import app.tellyscope.ui.ForgetDialog
 import app.tellyscope.ui.FilesBlock
 import app.tellyscope.ui.FilesUi
@@ -323,4 +325,18 @@ class ScreenshotTest {
     }
 
     @Test fun reboot() = shot("15_reboot", screen = true) { RebootDialog({}, {}) }
+
+    @Test fun disableSuggested() {
+        val apps = listOf(
+            Suggested("com.xgimi.assistant", "XGIMI Assistant", null, optional = false, ticked = true),
+            Suggested("com.google.android.tvrecommendations", "TV Recommendations", null, optional = false, ticked = true),
+        )
+        shot("16_disable_suggested", screen = true) { DisableDialog(apps, {}, {}) }
+        // Names, not just a count.
+        compose.onNodeWithText("Disable 2 apps?").assertExists()
+        for (a in apps) {
+            compose.onNodeWithText(a.label).assertExists()
+            compose.onNodeWithText(a.pkg).assertExists()
+        }
+    }
 }

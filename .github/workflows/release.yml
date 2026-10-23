@@ -20,6 +20,9 @@ jobs:
   alpha:
     if: github.ref_type == 'tag' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    # Its own key, in its own Environment: an alpha can never update a prod install, and a dev
+    # push never sees the prod key.
+    environment: alpha
     timeout-minutes: 30
     permissions:
       contents: write
@@ -68,21 +71,23 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # No fallback to the release key: without the alpha secrets the job fails.
       - name: Keystore
         env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          ALPHA_KEYSTORE_BASE64: ${{ secrets.ALPHA_KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
-            echo "::error::Repo secret RELEASE_KEYSTORE_BASE64 is not set; see CONTRIBUTING.md#releases"
+          if [ -z "$ALPHA_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret ALPHA_KEYSTORE_BASE64 is not set in the alpha environment; see CONTRIBUTING.md#releases"
             exit 1
           fi
-          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf '%s' "$ALPHA_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/alpha.jks"
 
+      # Gradle reads the RELEASE_* names for whichever key the job hands it.
       - name: Build
         env:
-          RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE: ${{ runner.temp }}/alpha.jks
+          RELEASE_KEY_ALIAS: ${{ secrets.ALPHA_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ALPHA_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease -Ptellyscope.alpha=${{ steps.tag.outputs.n }} --console=plain
 
       - name: Alpha pre-release
@@ -96,7 +101,8 @@ jobs:
           fi
           APK="Tellyscope-$TAG.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
-          PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          # The nearest tag before this commit, alpha or prod; a glob would find the tag just pushed.
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)
           {
             echo "Alpha build $TAG from \`${GITHUB_SHA::7}\` on dev. Untested and may break; it installs as a separate app, \`app.tellyscope.alpha\`."
             echo
@@ -112,6 +118,7 @@ jobs:
   prod:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 30
     permissions:
       contents: write
@@ -147,7 +154,7 @@ jobs:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
           if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
-            echo "::error::Repo secret RELEASE_KEYSTORE_BASE64 is not set; see CONTRIBUTING.md#releases"
+            echo "::error::Secret RELEASE_KEYSTORE_BASE64 is not set in the release environment; see CONTRIBUTING.md#releases"
             exit 1
           fi
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
@@ -168,7 +175,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           V: ${{ steps.version.outputs.version }}
         run: |
-          PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          PREV=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
           awk -v v="$V" '
             /^## / { if (on) exit; h = $0; sub(/^## v?/, "", h); split(h, a, /[ \t]/); on = (a[1] == v); next }
             on

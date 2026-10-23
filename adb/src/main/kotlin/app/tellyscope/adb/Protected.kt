@@ -4,7 +4,7 @@ package app.tellyscope.adb
 
 /** Why a package may not be stopped or disabled. The UI shows the matching copy. */
 enum class ProtectedReason {
-    HOME_SCREEN, SYSTEM, SETTINGS, PLAY_SERVICES, KEYBOARD, TV_INPUTS_REMOTE, SETUP_WIZARD,
+    HOME_SCREEN, SYSTEM, SETTINGS, PLAY_SERVICES, KEYBOARD, TV_INPUTS_REMOTE, SETUP_WIZARD, UPDATES,
 
     /** The TV didn't say which app is its home screen, so nothing is stopped or disabled. */
     UNKNOWN_HOME,
@@ -37,10 +37,24 @@ object Protected {
         "com.android.webview" to ProtectedReason.SYSTEM,
     )
 
+    /**
+     * System updaters: `update`/`upgrade` anywhere, `ota` only as a whole name part or before
+     * `update`, so `com.tcl.bootadservice` and `com.itwgame.mota` stay unprotected.
+     */
+    private val UPDATER = Regex("updat|upgrad|(^|\\.)(f|usb|remote|auth)?ota(\\.|$)|otaupdat")
+
     /** Name fragments, checked in order; manufacturer names vary, so these match loosely. */
     private val PATTERNS: List<Pair<String, ProtectedReason>> = listOf(
         "launcher" to ProtectedReason.HOME_SCREEN, // second guard behind the live home lookup
         "networkstack" to ProtectedReason.SYSTEM, // Wi-Fi and Ethernet setup; we'd cut our own link
+        // Wi-Fi config, connectivity resources and their OEM overlays: same reason, and once Wi-Fi is
+        // gone so is the ADB link an undo would need.
+        "com.android.wifi" to ProtectedReason.SYSTEM,
+        "com.google.android.wifi" to ProtectedReason.SYSTEM,
+        "wifi.resources" to ProtectedReason.SYSTEM,
+        "connectivity" to ProtectedReason.SYSTEM,
+        // Chrome's shared library; WebView and Chrome stop loading without it.
+        "trichromelibrary" to ProtectedReason.SYSTEM,
         "inputmethod" to ProtectedReason.KEYBOARD,
         "keyboard" to ProtectedReason.KEYBOARD,
         ".ime" to ProtectedReason.KEYBOARD,
@@ -64,6 +78,7 @@ object Protected {
         EXACT[pkg]?.let { return it }
         if (CORE.matches(pkg) && !CORE_OK.matches(pkg)) return ProtectedReason.SYSTEM
         val lower = pkg.lowercase()
-        return PATTERNS.firstOrNull { (fragment, _) -> fragment in lower }?.second
+        PATTERNS.firstOrNull { (fragment, _) -> fragment in lower }?.let { return it.second }
+        return if (UPDATER.containsMatchIn(lower)) ProtectedReason.UPDATES else null
     }
 }

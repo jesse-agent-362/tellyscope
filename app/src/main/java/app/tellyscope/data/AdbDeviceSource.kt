@@ -486,6 +486,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.KEYBOARD -> "you'd lose the on-screen keyboard"
         ProtectedReason.TV_INPUTS_REMOTE -> "your remote or HDMI inputs could stop working"
         ProtectedReason.SETUP_WIZARD -> "the TV may get stuck on restart without it"
+        ProtectedReason.UPDATES -> "the TV gets its updates through this"
         ProtectedReason.UNKNOWN_HOME -> "this TV didn't say which app is its home screen, so Tellyscope won't change anything"
     }
 }

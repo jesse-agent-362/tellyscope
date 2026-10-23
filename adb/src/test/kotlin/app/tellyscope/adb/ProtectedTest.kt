@@ -28,4 +28,27 @@ class ProtectedTest {
         assertNull(Protected.reason("com.google.android.tvrecommendations"))
         assertNull(Protected.reason("com.amazon.amazonvideo.livingroom"))
     }
+
+    @Test fun updaters() {
+        for (pkg in listOf(
+            "com.droidlogic.updater", "com.xiaomi.mitv.updateservice", "com.sony.dtv.systemupdate",
+            "com.xgimi.upgrade", "com.coocaa.os.upgrade", "com.amazon.tv.forcedotaupdater.v2",
+            "com.amazon.device.software.ota", "com.xgimi.ota.accessories", "com.vt.tv.usbota",
+            "com.apps.authota", "com.htc.htcotaupdate", "com.nvidia.ota",
+        )) assertEquals(ProtectedReason.UPDATES, Protected.reason(pkg), pkg)
+        // "ota" inside another word is not an updater.
+        assertNull(Protected.reason("com.tcl.bootadservice"))
+        assertNull(Protected.reason("com.itwgame.mota.nearme.gamecenter"))
+    }
+
+    @Test fun wifiAndSharedLibraries() {
+        for (pkg in listOf(
+            "com.android.wifi.resources", "com.google.android.wifi.resources", "com.android.wifi.resources.xiaomi",
+            "com.android.connectivity.resources", "com.google.android.connectivity.resources",
+            "com.google.android.trichromelibrary", "com.google.android.trichromelibrary_602614532",
+        )) assertEquals(ProtectedReason.SYSTEM, Protected.reason(pkg), pkg)
+        // Wi-Fi extras the lists turn off stay allowed.
+        assertNull(Protected.reason("com.sony.dtv.networkapp.wifidirect"))
+        assertNull(Protected.reason("com.amazon.wifilocker"))
+    }
 }
