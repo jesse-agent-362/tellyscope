@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.1.0 — 2026-10-23
+
 - **New:** A new app icon: a telescope with a TV screen for a lens. [#28](../../pull/28)
 - **New:** Install apps on the TV from an APK, split APKs or a bundle. [#9](../../pull/9)
 - **New:** Send files to the TV's Download or Movies folder, and save them back. [#9](../../pull/9)
