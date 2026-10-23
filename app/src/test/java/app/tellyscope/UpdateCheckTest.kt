@@ -5,6 +5,7 @@ package app.tellyscope
 import app.tellyscope.data.UpdateCheck
 import app.tellyscope.data.compareVersions
 import app.tellyscope.data.newest
+import app.tellyscope.ui.dialogNotes
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -115,5 +116,61 @@ class UpdateCheckTest {
         assertFalse(UpdateCheck(file, "0.1.0", alpha = false).enabled)
         assertNull(check.check())
         assertEquals(0, calls)
+    }
+
+    /** v0.1.0's body as release.yml wrote it, commit list cut short. */
+    private val prodBody = """
+
+        - **New:** A new app icon: a telescope with a TV screen for a lens. [#28](../../pull/28)
+        - **New:** Install apps on the TV from an APK, split APKs or a bundle. [#9](../../pull/9)
+        - **New:** Send files to the TV's Download or Movies folder, and save them back. [#9](../../pull/9)
+        - **New:** Suggested apps to disable, from a tested list for your TV. [#11](../../pull/11)
+        - **Fixed:** Processes, screen state, connections and data used now show on real TVs. [#17](../../pull/17)
+        - **Fixed:** A TV on Wi-Fi no longer shows its connection as Ethernet. [#17](../../pull/17)
+        - **New:** An icon shows whether each device is a TV, projector, Fire TV or stick. [#18](../../pull/18)
+        - **Improved:** The confirm before disabling suggested apps names every app. [#19](../../pull/19)
+        - **Improved:** System updaters, Wi-Fi resources and Chrome's library are now protected. [#19](../../pull/19)
+        - **Fixed:** Done and error messages stay on screen long enough to read. [#20](../../pull/20)
+        - **Fixed:** Undo and results always go to the TV the action ran on. [#20](../../pull/20)
+        - **New:** Debloat in two steps: pick your TV, then review every app it turns off. [#23](../../pull/23)
+        - **Improved:** The TV page leads with the TV, its vitals and big action buttons. [#23](../../pull/23)
+        - **Fixed:** Adding a TV with a port above 65535 shows a message, not a crash. [#25](../../pull/25)
+        - **Fixed:** Losing Wi-Fi while pairing shows a message, not a crash. [#25](../../pull/25)
+        - **Fixed:** A broken suggestions list can no longer crash the app. [#25](../../pull/25)
+        - **Improved:** Undoing a Turn on in History asks before disabling the app. [#25](../../pull/25)
+
+        ### Commits since the first commit
+
+        - Changelog: 0.1.0 — 2026-10-23 (c9a1fe7)
+        - README: the icon and a real heading, in place of the logo header (ef66937)
+    """.trimIndent()
+
+    /** v0.2.0-alpha.1's body as release.yml wrote it, commit list cut short. */
+    private val alphaBody = """
+        Alpha build v0.2.0-alpha.1 from `abdb1a8` on dev. Untested and may break; it installs as a separate app, `app.tellyscope.alpha`.
+
+        ### Commits since v0.1.0-alpha.3
+
+        - CHANGELOG: home screen switch (abdb1a8)
+        - Start 0.2.0 (4afecde)
+    """.trimIndent()
+
+    @Test fun `prod notes keep the changelog lines, plain, capped at twelve`() {
+        val lines = dialogNotes(prodBody).lines()
+        assertEquals(13, lines.size)
+        assertEquals("- New: A new app icon: a telescope with a TV screen for a lens.", lines.first())
+        assertEquals("…and more on GitHub", lines.last())
+        assertTrue(lines.none { "**" in it || "](" in it || "Commits" in it })
+    }
+
+    @Test fun `alpha notes are just the alpha line`() {
+        assertEquals(
+            "Alpha build v0.2.0-alpha.1 from abdb1a8 on dev. Untested and may break; it installs as a separate app, app.tellyscope.alpha.",
+            dialogNotes(alphaBody),
+        )
+    }
+
+    @Test fun `short notes are not cut`() {
+        assertEquals("- Fixed: one thing.", dialogNotes("- **Fixed:** one thing. [#9](../../pull/9)\n\n### Commits since v1\n\n- x (abc)"))
     }
 }

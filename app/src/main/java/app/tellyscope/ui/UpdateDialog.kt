@@ -24,9 +24,8 @@ fun UpdateDialog(update: Update, onGet: () -> Unit, onLater: () -> Unit, onSkip:
         onDismissRequest = onLater,
         title = { Text("Tellyscope ${update.version} is out") },
         text = {
-            // Release notes are Markdown; shown as written rather than rendered.
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                Text(update.notes.ifEmpty { "No release notes." }, style = MaterialTheme.typography.bodyMedium)
+                Text(dialogNotes(update.notes).ifEmpty { "No release notes." }, style = MaterialTheme.typography.bodyMedium)
             }
         },
         confirmButton = { Button(onClick = onGet) { Text("Get it") } },
@@ -38,3 +37,16 @@ fun UpdateDialog(update: Update, onGet: () -> Unit, onLater: () -> Unit, onSkip:
         },
     )
 }
+
+/**
+ * release.yml's body as plain lines: the CHANGELOG part (prod) or the alpha line, without the
+ * commit list, Markdown emphasis, code ticks or the trailing PR links, capped at [max] lines.
+ */
+internal fun dialogNotes(body: String, max: Int = 12): String {
+    val lines = body.substringBefore("### Commits").lines()
+        .map { it.replace("**", "").replace("`", "").replace(PR_LINK, "").trimEnd() }
+        .filter { it.isNotBlank() }
+    return (if (lines.size > max) lines.take(max) + "…and more on GitHub" else lines).joinToString("\n")
+}
+
+private val PR_LINK = Regex("""\s*\[#\d+]\([^)]*\)\s*$""")
