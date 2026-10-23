@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-23
+
 - **New:** Uninstall apps you installed yourself; apps that came with the TV can only be disabled. [#33](../../pull/33)
 - **Improved:** Apps that can't be changed fold into their own section below the list. [#33](../../pull/33)
 - **Fixed:** App icons that failed to load once now come back, with a fallback to the banner. [#34](../../pull/34)
