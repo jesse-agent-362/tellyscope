@@ -299,6 +299,8 @@ private fun TvTitle(state: UiState, actions: DeviceActions) {
             Modifier.clip(MaterialTheme.shapes.large).clickable { open = true }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val kind = deviceKind(device)
+            Icon(DeviceIcons.of(kind), contentDescription = kind.word(), Modifier.padding(end = 12.dp))
             Column(Modifier.weight(1f, fill = false)) {
                 val title = name(device)
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
