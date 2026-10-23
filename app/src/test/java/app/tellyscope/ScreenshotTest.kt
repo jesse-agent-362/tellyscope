@@ -219,24 +219,51 @@ class ScreenshotTest {
     @Test fun tabs_files_dark() = shot("42_tabs_files", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Files) }
     @Test fun tabs_tweaks_dark() = shot("43_tabs_tweaks", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Tweaks) }
 
-    @Test fun tabs_tvMenu() {
+    @Test fun tabs_tvMenu() = tvMenu(dark = false)
+    @Test fun tabs_tvMenu_dark() = tvMenu(dark = true)
+
+    private fun tvMenu(dark: Boolean) {
         val open = {
             compose.onNodeWithContentDescription("Switch TV").performClick()
             compose.mainClock.advanceTimeBy(1_000)
             compose.onNodeWithText("Add a TV").assertExists()
             Unit
         }
-        shot("44_tabs_tv_menu", screen = true, before = open) { DeviceTabsScreen(tabsState().copy(showOffline = true), DeviceActions()) }
+        shot("44_tabs_tv_menu", dark, screen = true, before = open) { DeviceTabsScreen(tabsState().copy(showOffline = true), DeviceActions()) }
     }
 
-    @Test fun tabs_appMenu() {
+    @Test fun tabs_appMenu() = appMenu(dark = false)
+    @Test fun tabs_appMenu_dark() = appMenu(dark = true)
+
+    @Test fun tabs_searchOnlyOnApps() {
+        val queries = mutableListOf<String>()
+        compose.mainClock.autoAdvance = false // as in shot(): expressive indicators never idle
+        compose.setContent {
+            TellyscopeTheme(dark = false, dynamic = false) {
+                DeviceTabsScreen(tabsState(), DeviceActions(query = { queries += it }), startTab = TvTab.Apps)
+            }
+        }
+        compose.onNodeWithContentDescription("Search apps").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Overview").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        // Leaving Apps closed the search and cleared its query; the icon is gone with it.
+        assertEquals(listOf(""), queries)
+        compose.onNodeWithContentDescription("Search apps").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Close search").assertDoesNotExist()
+        compose.onNodeWithText("Apps").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithContentDescription("Search apps").assertExists()
+    }
+
+    private fun appMenu(dark: Boolean) {
         val open = {
             compose.onNodeWithContentDescription("More options").performClick()
             compose.mainClock.advanceTimeBy(1_000)
             compose.onNodeWithText("About & licences").assertExists()
             Unit
         }
-        shot("45_tabs_app_menu", screen = true, before = open) { DeviceTabsScreen(tabsState(), DeviceActions()) }
+        shot("45_tabs_app_menu", dark, screen = true, before = open) { DeviceTabsScreen(tabsState(), DeviceActions()) }
     }
 
     @Test fun device_overview() {

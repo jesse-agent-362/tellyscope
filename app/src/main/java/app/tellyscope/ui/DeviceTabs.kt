@@ -151,8 +151,11 @@ fun DeviceTabsScreen(
                     title = { TvTitle(state, actions) },
                     actions = {
                         if (REMOTE_ENABLED) TextButton(onClick = actions.remote, enabled = !offline) { Text("Remote") }
-                        IconButton(onClick = { searching = true; tab = TvTab.Apps }, enabled = !offline) {
-                            Icon(Icons.Default.Search, contentDescription = "Search apps")
+                        // Search only looks through apps, so it only shows on the Apps tab.
+                        if (tab == TvTab.Apps) {
+                            IconButton(onClick = { searching = true }, enabled = !offline) {
+                                Icon(Icons.Default.Search, contentDescription = "Search apps")
+                            }
                         }
                         AppMenu(state, actions)
                     },
@@ -164,7 +167,11 @@ fun DeviceTabsScreen(
                 TvTab.entries.forEach { t ->
                     ShortNavigationBarItem(
                         selected = tab == t,
-                        onClick = { tab = t },
+                        onClick = {
+                            // Leaving Apps closes the search, so the list isn't still filtered on return.
+                            if (t != TvTab.Apps && searching) { searching = false; actions.query("") }
+                            tab = t
+                        },
                         icon = { Icon(t.icon(), contentDescription = null) },
                         label = { Text(t.label) },
                     )
