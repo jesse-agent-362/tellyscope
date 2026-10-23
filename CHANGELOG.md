@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+## 0.3.0 — 2026-10-24
+
 - **Improved:** Picking your TV: your match on its own, or search by maker. [#49](../../pull/49)
 - **New:** Off Wi-Fi, the scan screen shows how to connect instead of an empty list. [#55](../../pull/55)
 
