@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     # Alpha tags only. Prod's vX.Y.Z tags have no "-alpha." and don't match.
     tags: ['v*-alpha.*']
 
@@ -14,10 +14,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Alpha: pushing a tag like v0.1.0-alpha.1 on a dev commit publishes that
-  # tag as a pre-release. app.tellyscope.alpha installs next to the release build.
+  # Alpha: every push to dev publishes the next v<versionName>-alpha.N as a
+  # pre-release; pushing such a tag on a dev commit by hand does the same for
+  # that tag. app.tellyscope.alpha installs next to the release build.
   alpha:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,6 +31,16 @@ jobs:
       - name: Tag
         id: tag
         run: |
+          NAME=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          if [ "$GITHUB_REF_TYPE" = branch ]; then
+            # A push to dev: one past the highest alpha of this version. The tag
+            # is pushed only after the build passes, in the pre-release step.
+            LAST=$(git tag -l "v$NAME-alpha.*" | sed 's/.*-alpha\.//' | grep -E '^[0-9]+$' | sort -n | tail -n 1)
+            N=$(( ${LAST:-0} + 1 ))
+            echo "tag=v$NAME-alpha.$N" >> "$GITHUB_OUTPUT"
+            echo "n=$N" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           TAG="$GITHUB_REF_NAME"
           N="${TAG##*-alpha.}"
           if ! [[ "$N" =~ ^[1-9][0-9]*$ ]]; then
@@ -37,7 +48,6 @@ jobs:
             exit 1
           fi
           V="${TAG#v}"; V="${V%-alpha.*}"
-          NAME=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
           if [ "$V" != "$NAME" ]; then
             echo "::error::$TAG is version $V, but versionName in app/build.gradle.kts is $NAME; tag v$NAME-alpha.<number> instead"
             exit 1
@@ -47,6 +57,7 @@ jobs:
             echo "::error::$TAG is not on dev; alpha tags go on dev commits only"
             exit 1
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "n=$N" >> "$GITHUB_OUTPUT"
 
       # JDK 25: Kadb ships Java 25 bytecode.
@@ -77,8 +88,12 @@ jobs:
       - name: Alpha pre-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          if [ "$GITHUB_REF_TYPE" = branch ]; then
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+          fi
           APK="Tellyscope-$TAG.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
           PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
