@@ -22,6 +22,7 @@ object Copy {
         Action.Disable -> "Disable"
         Action.Enable -> "Turn on"
         Action.Open -> "Open"
+        Action.Uninstall -> "Uninstall"
     }
 
     fun confirm(action: Action) = when (action) {
@@ -29,6 +30,7 @@ object Copy {
         Action.Disable -> "Yes, disable it"
         Action.Enable -> "Yes, turn it on"
         Action.Open -> "Yes, open it"
+        Action.Uninstall -> "Yes, uninstall it"
     }
 
     /**
@@ -41,6 +43,7 @@ object Copy {
             Action.Disable -> "Hides $who and stops it running. Nothing is deleted; you can turn it back on here."
             Action.Enable -> "Turns $who back on."
             Action.Open -> "Opens $who on the TV."
+            Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
         }
     }
 
@@ -49,6 +52,7 @@ object Copy {
         Action.Disable -> "Disabled $app"
         Action.Enable -> "Turned on $app"
         Action.Open -> "Opened $app"
+        Action.Uninstall -> "Uninstalled $app"
     }
 
     /**
@@ -110,6 +114,10 @@ object Copy {
         done == 0 -> "The TV didn't disable any of them."
         else -> "Disabled $done of $of apps; the TV refused the rest. Undo any of them from History."
     }
+
+    fun uninstallTitle(app: String) = "Uninstall $app?"
+
+    const val CANT_CHANGE = "Can't be changed"
 
     const val ANDROID_SYSTEM = AppNames.SYSTEM
 

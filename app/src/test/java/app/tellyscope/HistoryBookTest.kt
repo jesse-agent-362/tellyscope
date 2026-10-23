@@ -71,6 +71,18 @@ class HistoryBookTest {
         assertEquals("Net flix", entries.single().label)
     }
 
+    @Test fun uninstallHasNoUndoAndRestoreForgetsTheApp() = runTest {
+        val source = FakeDeviceSource()
+        val id = "tv"
+        source.act(id, Action.Disable, "com.netflix.ninja")
+        val gone = source.act(id, Action.Uninstall, "com.netflix.ninja")
+
+        assertNull(gone.undo)
+        assertTrue(source.apps(id).none { it.packageName == "com.netflix.ninja" })
+        assertEquals(emptyList<String>(), HistoryBook.leftDisabled(source.history(id)))
+        assertEquals(emptyList<String>(), source.restoreAll(id).map { it.packageName })
+    }
+
     @Test fun restoreAllTurnsOnOnlyWhatTellyscopeDisabled() = runTest {
         // The fake TV starts with TV Recommendations already disabled.
         val source = FakeDeviceSource()

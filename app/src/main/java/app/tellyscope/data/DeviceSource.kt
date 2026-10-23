@@ -50,8 +50,8 @@ interface DeviceSource {
     suspend fun network(deviceId: String): NetworkInfo
 
     /**
-     * Runs an action and records it. Never uninstalls: there is no uninstall in [Action] on
-     * purpose. [undoing] is the history entry this reverses, which gets marked undone.
+     * Runs an action and records it. Uninstall runs only on apps the user installed, and has no
+     * undo. [undoing] is the history entry this reverses, which gets marked undone.
      */
     suspend fun act(deviceId: String, action: Action, packageName: String, undoing: Long? = null): HistoryEntry
 

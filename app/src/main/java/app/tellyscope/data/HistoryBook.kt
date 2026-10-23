@@ -83,9 +83,9 @@ class HistoryBook(private val file: File? = null) {
     }
 
     companion object {
-        /** Packages whose last disable/enable in [history] was a disable. */
+        /** Packages whose last disable/enable in [history] was a disable; an uninstall clears it. */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
-            history.filter { it.action == Action.Disable || it.action == Action.Enable }
+            history.filter { it.action == Action.Disable || it.action == Action.Enable || it.action == Action.Uninstall }
                 .sortedBy { it.id }
                 .associate { it.packageName to it.action }
                 .filterValues { it == Action.Disable }

@@ -250,6 +250,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val home = Actions(shell).homePackages()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
+        val userInstalled = Parsers.packages(shell.shell("pm list packages -3").output).map { it.name }.toSet()
         // Older pm rejects --show-versioncode and prints no packages; list again without it.
         val listed = Parsers.packages(shell.shell("pm list packages --show-versioncode").output)
             .ifEmpty { Parsers.packages(shell.shell("pm list packages").output) }
@@ -277,6 +278,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 ),
                 version = "",
                 icon = name.icon,
+                removable = p.name in userInstalled && p.name !in keep,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -322,7 +324,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val key = key(deviceId)
         if (!book.hasBaseline(key)) book.setBaseline(key, disabledPackages(deviceId))
         // The list's keep entries add to the built-in protection in Actions.run; look it up if not yet.
-        if (action == Action.Stop || action == Action.Disable) {
+        if (action == Action.Stop || action == Action.Disable || action == Action.Uninstall) {
             if (keepRefuses(action, packageName, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
                 throw IllegalStateException(KEEP_REASON)
             }
@@ -488,5 +490,6 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         ProtectedReason.SETUP_WIZARD -> "the TV may get stuck on restart without it"
         ProtectedReason.UPDATES -> "the TV gets its updates through this"
         ProtectedReason.UNKNOWN_HOME -> "this TV didn't say which app is its home screen, so Tellyscope won't change anything"
+        ProtectedReason.CAME_WITH_TV -> "it came with the TV, so it can only be disabled"
     }
 }

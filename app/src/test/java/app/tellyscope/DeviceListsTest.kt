@@ -147,6 +147,7 @@ class DeviceListsTest {
 
         assertTrue(keepRefuses(Action.Disable, "com.acme.hdmi", keep))
         assertTrue(keepRefuses(Action.Stop, "com.acme.hdmi", keep))
+        assertTrue(keepRefuses(Action.Uninstall, "com.acme.hdmi", keep))
         assertFalse(keepRefuses(Action.Enable, "com.acme.hdmi", keep))
         assertFalse(keepRefuses(Action.Disable, "com.acme.reporter", keep))
 

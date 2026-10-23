@@ -12,6 +12,9 @@ until this file has a section for its version.
 
 ## Unreleased
 
+- **New:** Uninstall apps you installed yourself; apps that came with the TV can only be disabled. [#33](../../pull/33)
+- **Improved:** Apps that can't be changed fold into their own section below the list. [#33](../../pull/33)
+
 ## 0.1.0 — 2026-10-23
 
 - **New:** A new app icon: a telescope with a TV screen for a lens. [#28](../../pull/28)

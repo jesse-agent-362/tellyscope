@@ -16,6 +16,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import app.tellyscope.adb.ApkInfo
@@ -256,6 +258,40 @@ class ScreenshotTest {
         compose.onNodeWithText("Yes, disable it").performClick()
         compose.mainClock.advanceTimeBy(1_000)
         assertEquals(listOf(turnedOn), undone)
+    }
+
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun apps_uninstallOnlyForUserApps() {
+        val proposed = mutableListOf<Pair<String, Action>>()
+        val tap = { label: String ->
+            compose.onNodeWithText(label).performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+        }
+        shot("26_apps_uninstall_offered", screen = true, before = { tap("Netflix"); tap("XGIMI Assistant"); Unit }) {
+            DeviceScreen(deviceState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }))
+        }
+        // Netflix was installed by the user; XGIMI Assistant came with the TV and only gets Disable.
+        compose.onAllNodesWithText("Uninstall").assertCountEquals(1)
+        compose.onNodeWithText("Uninstall").performClick()
+        assertEquals(listOf("com.netflix.ninja" to Action.Uninstall), proposed)
+    }
+
+    @Test fun apps_uninstallAsksInADialog() {
+        val state = deviceState { copy(pending = "com.netflix.ninja" to Action.Uninstall) }
+        shot("27_apps_uninstall_confirm", screen = true) { DeviceScreen(state, DeviceActions()) }
+        compose.onNodeWithText("Uninstall Netflix?").assertExists()
+        compose.onNodeWithText("can't be undone", substring = true).assertExists()
+        compose.onNodeWithText("Yes, uninstall it").assertExists()
+    }
+
+    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    @Test fun apps_protectedAreFoldedAway() {
+        shot("28_apps_protected_folded", screen = true) { DeviceScreen(deviceState(), DeviceActions()) }
+        compose.onNodeWithText("Can't be changed").assertExists()
+        compose.onNodeWithText("System UI").assertDoesNotExist()
+        compose.onNodeWithText("Can't be changed").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("System UI").assertExists()
     }
 
     /** A real TV's app list: no per-process stats yet, so the apps sit right under the stat grid. */

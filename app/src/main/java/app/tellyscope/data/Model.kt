@@ -98,6 +98,8 @@ data class AppInfo(
     val version: String,
     /** The app's own icon as a PNG, from the TV; null shows the letter avatar. */
     val icon: ByteArray? = null,
+    /** Installed by the user (`pm list packages -3`), so Uninstall is offered. Never for apps that came with the TV. */
+    val removable: Boolean = false,
 )
 
 data class Socket(val app: String, val remote: String, val state: String)
@@ -114,7 +116,7 @@ data class NetworkInfo(
     val traffic: List<AppTraffic>,
 )
 
-enum class Action { Stop, Disable, Enable, Open }
+enum class Action { Stop, Disable, Enable, Open, Uninstall }
 
 data class HistoryEntry(
     val id: Long,

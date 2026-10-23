@@ -198,13 +198,14 @@ class FakeDeviceSource(
         when (action) {
             Action.Disable -> list[i] = app.copy(enabled = false)
             Action.Enable -> list[i] = app.copy(enabled = true)
+            Action.Uninstall -> list.removeAt(i)
             Action.Stop, Action.Open -> Unit
         }
         val undo = when (action) {
             Action.Stop -> Action.Open
             Action.Disable -> Action.Enable
             Action.Enable -> Action.Disable
-            Action.Open -> null
+            Action.Open, Action.Uninstall -> null
         }
         return book.record(deviceId, clock(), action, packageName, app.label, undo, undoing)
     }
@@ -321,8 +322,8 @@ class FakeDeviceSource(
         val baseApps = listOf(
             AppInfo("com.spocky.projengmenu", "Projectivy Launcher", 0xFF3D5AFE, false, true, "this is your home screen", "4.52"),
             AppInfo("com.google.android.youtube.tv", "YouTube", 0xFFC4302B, false, true, null, "4.40.303"),
-            AppInfo("com.netflix.ninja", "Netflix", 0xFFB20710, false, true, null, "11.2.0"),
-            AppInfo("org.jellyfin.androidtv", "Jellyfin", 0xFF7B5EA7, false, true, null, "0.17.4"),
+            AppInfo("com.netflix.ninja", "Netflix", 0xFFB20710, false, true, null, "11.2.0", removable = true),
+            AppInfo("org.jellyfin.androidtv", "Jellyfin", 0xFF7B5EA7, false, true, null, "0.17.4", removable = true),
             AppInfo("com.xgimi.assistant", "XGIMI Assistant", null, true, true, null, "2.1.8"),
             AppInfo("com.xgimi.ota", "XGIMI Updates", null, true, true, null, "1.4.0"),
             AppInfo("com.google.android.tvrecommendations", "TV Recommendations", null, true, false, null, "1.0"),

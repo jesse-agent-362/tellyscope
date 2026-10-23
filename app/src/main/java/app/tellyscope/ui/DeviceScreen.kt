@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -219,18 +220,30 @@ fun DeviceScreen(
                 }
             }
             // An offline TV can't list anything: sections with nothing in them stay out of the way.
+            // Protected apps can't be changed, so they wait in their own folded section below.
+            val (locked, changeable) = ui.apps
+                .filter { q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.contains(q) }
+                .sortedWith(compareBy({ !it.enabled }, { it.system }, { it.label }))
+                .partition { it.protectedReason != null }
             if (!offline || ui.apps.isNotEmpty()) section(
                 key = "apps",
                 title = "Apps",
-                count = ui.apps.size,
+                count = ui.apps.count { it.protectedReason == null },
                 expandedByDefault = true,
                 forceOpen = q.isNotEmpty(),
             ) {
-                val apps = ui.apps
-                    .filter { q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.contains(q) }
-                    .sortedWith(compareBy({ it.protectedReason != null }, { !it.enabled }, { it.system }, { it.label }))
-                if (apps.isEmpty()) EmptyLine(q)
-                apps.forEach { app ->
+                if (changeable.isEmpty()) EmptyLine(q)
+                changeable.forEach { app ->
+                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions)
+                }
+            }
+            if (ui.apps.any { it.protectedReason != null } && (q.isEmpty() || locked.isNotEmpty())) section(
+                key = "protected",
+                title = Copy.CANT_CHANGE,
+                count = ui.apps.count { it.protectedReason != null },
+                forceOpen = q.isNotEmpty(),
+            ) {
+                locked.forEach { app ->
                     AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions)
                 }
             }
@@ -667,6 +680,23 @@ fun AppIcon(app: AppInfo, modifier: Modifier = Modifier) {
     }
 }
 
+/** Uninstall has no undo, so it asks in a dialog that names the app, not inline. */
+@Composable
+fun UninstallDialog(app: AppInfo, onUninstall: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(Copy.uninstallTitle(app.label)) },
+        text = { Text(Copy.explain(Action.Uninstall, app.label, app.packageName)) },
+        confirmButton = {
+            Button(
+                onClick = onUninstall,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+            ) { Text(Copy.confirm(Action.Uninstall)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AppRow(
@@ -710,7 +740,10 @@ private fun AppRow(
                         if (app.enabled && ram > 0) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Stop) }) { Text(Copy.button(Action.Stop)) }
                         if (app.enabled) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Disable) }) { Text(Copy.button(Action.Disable)) }
                         else FilledTonalButton(onClick = { actions.propose(app.packageName, Action.Enable) }) { Text(Copy.button(Action.Enable)) }
+                        if (app.removable) OutlinedButton(onClick = { actions.propose(app.packageName, Action.Uninstall) }) { Text(Copy.button(Action.Uninstall)) }
                     }
+                } else if (proposed == Action.Uninstall) {
+                    UninstallDialog(app, onUninstall = actions.confirm, onDismiss = actions.cancel)
                 } else {
                     Text(Copy.explain(proposed, app.label, app.packageName), style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
