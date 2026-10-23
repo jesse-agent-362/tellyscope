@@ -2,7 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
+    # Alpha tags only. Prod's vX.Y.Z tags have no "-alpha." and don't match.
+    tags: ['v*-alpha.*']
 
 permissions:
   contents: read
@@ -12,10 +14,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Rolling alpha: every push to dev replaces the `alpha` pre-release.
-  # app.tellyscope.alpha installs next to the release build.
+  # Alpha: pushing a tag like v0.1.0-alpha.1 on a dev commit publishes that
+  # tag as a pre-release. app.tellyscope.alpha installs next to the release build.
   alpha:
-    if: github.ref == 'refs/heads/dev'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -23,7 +25,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # the tags
+          fetch-depth: 0  # the tags, and dev for the check below
+
+      - name: Tag
+        id: tag
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          N="${TAG##*-alpha.}"
+          if ! [[ "$N" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::$TAG must end in -alpha.<number>, like v0.1.0-alpha.1"
+            exit 1
+          fi
+          V="${TAG#v}"; V="${V%-alpha.*}"
+          NAME=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          if [ "$V" != "$NAME" ]; then
+            echo "::error::$TAG is version $V, but versionName in app/build.gradle.kts is $NAME; tag v$NAME-alpha.<number> instead"
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/dev:refs/remotes/origin/dev
+          if ! git merge-base --is-ancestor "$(git rev-parse "$TAG^{commit}")" origin/dev; then
+            echo "::error::$TAG is not on dev; alpha tags go on dev commits only"
+            exit 1
+          fi
+          echo "n=$N" >> "$GITHUB_OUTPUT"
 
       # JDK 25: Kadb ships Java 25 bytecode.
       - uses: actions/setup-java@v6
@@ -48,27 +72,25 @@ jobs:
           RELEASE_KEYSTORE: ${{ runner.temp }}/release.jks
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -Ptellyscope.alpha=${{ github.run_number }} --console=plain
+        run: ./gradlew :app:assembleRelease -Ptellyscope.alpha=${{ steps.tag.outputs.n }} --console=plain
 
       - name: Alpha pre-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN: ${{ github.run_number }}
+          TAG: ${{ github.ref_name }}
         run: |
-          V="$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)-alpha.$RUN"
-          APK="Tellyscope-alpha.apk"  # fixed name, so the download link never changes
+          APK="Tellyscope-$TAG.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
           PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
           {
-            echo "Alpha build $V from \`${GITHUB_SHA::7}\` on dev. Untested and may break; it installs as a separate app, \`app.tellyscope.alpha\`."
+            echo "Alpha build $TAG from \`${GITHUB_SHA::7}\` on dev. Untested and may break; it installs as a separate app, \`app.tellyscope.alpha\`."
             echo
             echo "### Commits since ${PREV:-the first commit}"
             echo
             git log --no-merges --pretty='- %s (%h)' ${PREV:+"$PREV.."}HEAD
           } > notes.md
-          gh release delete alpha --cleanup-tag --yes || true
-          gh release create alpha "$APK" --prerelease --target "$GITHUB_SHA" \
-            --title "Tellyscope $V" --notes-file notes.md
+          gh release create "$TAG" "$APK" --prerelease --verify-tag \
+            --title "Tellyscope $TAG" --notes-file notes.md
 
   # Prod: a merge into main tags vX.Y.Z from versionName and publishes the
   # signed APK. release-check.yml has already made sure the version is new.

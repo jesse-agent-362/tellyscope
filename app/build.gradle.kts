@@ -24,7 +24,7 @@ android {
         versionCode = 1
         versionName = "0.0.1"
 
-        // The rolling alpha (release.yml, on dev) passes -Ptellyscope.alpha=<run number>:
+        // An alpha tag (release.yml, vX.Y.Z-alpha.N on dev) passes -Ptellyscope.alpha=N:
         // a separate app ID, so it installs next to the release.
         providers.gradleProperty("tellyscope.alpha").orNull?.let { run ->
             applicationIdSuffix = ".alpha"
