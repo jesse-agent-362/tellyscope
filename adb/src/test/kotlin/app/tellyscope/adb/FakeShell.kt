@@ -19,10 +19,13 @@ class FakeShell(
     var rebooted = false
     /** Thrown by [reboot], like Kadb does when adbd refuses the service. */
     var rebootFails: Exception? = null
+    /** Checked before [answers], for a TV whose answer changes after a command. */
+    var answer: (String) -> ShellResult? = { null }
 
     override suspend fun shell(command: String): ShellResult {
         failWith?.let { throw it }
         ran += command
+        answer(command)?.let { return it }
         return answers.entries.firstOrNull { command.startsWith(it.key) }?.value ?: ShellResult("", 0)
     }
 

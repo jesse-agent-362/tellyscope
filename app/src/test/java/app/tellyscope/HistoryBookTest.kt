@@ -48,6 +48,19 @@ class HistoryBookTest {
         assertTrue(again.first().id > disabled.id)
     }
 
+    @Test fun aHomeSwitchSurvivesARestartAndRestoreTurnsTheOldLauncherOn() {
+        val file = tmp.root.resolve("history.tsv")
+        val previous = mapOf("from" to "com.google.android.tvlauncher/.MainActivity", "to" to "com.spocky.projengmenu/.Main")
+        val switch = HistoryBook(file).record(tv, 1_000, Action.Home, "com.google.android.tvlauncher", "Projectivy Launcher", Action.Enable, previous = previous)
+        val after = HistoryBook(file)
+        assertEquals(listOf(switch), after.entries(tv))
+        assertEquals(listOf("com.google.android.tvlauncher"), after.restorable(tv))
+        assertEquals(switch.id, after.openDisable(tv, "com.google.android.tvlauncher"))
+
+        after.record(tv, 2_000, Action.Enable, "com.google.android.tvlauncher", "Android TV Home", undo = null, undoing = switch.id)
+        assertTrue(after.restorable(tv).isEmpty())
+    }
+
     @Test fun baselineIsWrittenOnlyOnce() {
         val book = HistoryBook(tmp.root.resolve("history.tsv"))
         book.setBaseline(tv, setOf("com.old.off"))

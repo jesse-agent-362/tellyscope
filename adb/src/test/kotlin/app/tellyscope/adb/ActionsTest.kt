@@ -116,4 +116,82 @@ class ActionsTest {
         assertFailsWith<IllegalArgumentException> { Actions(sh).run(Action.STOP, "\$(reboot)") }
         assertTrue(sh.ran.isEmpty())
     }
+
+    /** A TV with the stock launcher and Projectivy; set-home-activity moves Home only if [accepts]. */
+    private fun twoLaunchers(accepts: Boolean = true): FakeShell {
+        var home = "com.google.android.tvlauncher/.MainActivity"
+        return FakeShell(mapOf(
+            "cmd package query-activities" to ok("com.google.android.tvlauncher/.MainActivity\ncom.spocky.projengmenu/.ui.home.MainActivity\n"),
+            "pm disable-user" to ok("Package com.google.android.tvlauncher new state: disabled-user\n"),
+        )).apply {
+            answer = { cmd ->
+                when {
+                    cmd.startsWith("cmd package resolve-activity") -> ok("priority=0 preferredOrder=0\n$home\n")
+                    cmd.startsWith("cmd package set-home-activity") -> {
+                        if (accepts) home = cmd.substringAfter("'").substringBefore("'")
+                        ok("Success\n")
+                    }
+                    else -> null
+                }
+            }
+        }
+    }
+
+    @Test fun offersOtherLaunchersOnly() = runTest {
+        assertEquals(HomeOptions("com.google.android.tvlauncher", setOf("com.spocky.projengmenu")), Actions(twoLaunchers()).homeOptions())
+    }
+
+    @Test fun noSecondLauncherNothingOffered() = runTest {
+        val sh = FakeShell(mapOf(home, "cmd package query-activities" to ok("com.google.android.tvlauncher/.MainActivity\n")))
+        assertEquals(emptySet(), Actions(sh).homeOptions()?.others)
+    }
+
+    @Test fun noDefaultHomeNothingOffered() = runTest {
+        val sh = FakeShell(mapOf(
+            "cmd package resolve-activity" to ok("priority=0\nandroid/com.android.internal.app.ResolverActivity\n"),
+            "cmd package query-activities" to ok("com.google.android.tvlauncher/.MainActivity\ncom.spocky.projengmenu/.Main\n"),
+        ))
+        assertEquals(null, Actions(sh).homeOptions())
+        assertEquals(HomeResult.Refused(ProtectedReason.UNKNOWN_HOME), Actions(sh).makeHome("com.spocky.projengmenu"))
+        assertTrue(sh.ran.none { it.startsWith("pm ") || "set-home" in it })
+    }
+
+    @Test fun makeHomeSwitchesChecksThenDisables() = runTest {
+        val sh = twoLaunchers()
+        assertEquals(
+            HomeResult.Switched("com.google.android.tvlauncher/.MainActivity", "com.spocky.projengmenu/.ui.home.MainActivity"),
+            Actions(sh).makeHome("com.spocky.projengmenu"),
+        )
+        val set = sh.ran.indexOf("cmd package set-home-activity --user 0 'com.spocky.projengmenu/.ui.home.MainActivity' 2>&1")
+        val off = sh.ran.indexOf("pm disable-user --user 0 com.google.android.tvlauncher 2>&1")
+        assertTrue(set >= 0 && off > set)
+    }
+
+    @Test fun homeCheckFailsNothingDisabled() = runTest {
+        val sh = twoLaunchers(accepts = false)
+        assertTrue(Actions(sh).makeHome("com.spocky.projengmenu") is HomeResult.Failed)
+        assertTrue(sh.ran.none { it.startsWith("pm ") })
+        // The old home is set back, in case the TV took the new one half-way.
+        assertEquals("cmd package set-home-activity --user 0 'com.google.android.tvlauncher/.MainActivity' 2>&1", sh.ran.last { "set-home" in it })
+    }
+
+    @Test fun failedDisablePutsHomeBack() = runTest {
+        val sh = twoLaunchers()
+        sh.answer.let { prev -> sh.answer = { if (it.startsWith("pm disable-user")) ok("Error: refused\n") else prev(it) } }
+        assertTrue(Actions(sh).makeHome("com.spocky.projengmenu") is HomeResult.Failed)
+        assertEquals("com.google.android.tvlauncher", Actions(sh).homeOptions()?.current)
+    }
+
+    @Test fun newHomeIsProtectedAfterTheSwitch() = runTest {
+        val sh = twoLaunchers()
+        Actions(sh).makeHome("com.spocky.projengmenu")
+        assertEquals(ActionResult.Refused(ProtectedReason.HOME_SCREEN), Actions(sh).run(Action.DISABLE, "com.spocky.projengmenu"))
+    }
+
+    @Test fun makeHomeOnlyForInstalledLaunchers() = runTest {
+        val sh = twoLaunchers()
+        assertTrue(Actions(sh).makeHome("com.netflix.ninja") is HomeResult.Failed)
+        assertTrue(Actions(sh).makeHome("com.google.android.tvlauncher") is HomeResult.Failed)
+        assertTrue(sh.ran.none { it.startsWith("pm ") || "set-home" in it })
+    }
 }

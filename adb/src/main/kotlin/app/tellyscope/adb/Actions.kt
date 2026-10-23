@@ -13,6 +13,16 @@ sealed interface ActionResult {
     data class Failed(val output: String) : ActionResult
 }
 
+/** What [Actions.makeHome] did. [from] and [to] are the old and new home activities, for Undo. */
+sealed interface HomeResult {
+    data class Switched(val from: String, val to: String) : HomeResult
+    data class Refused(val reason: ProtectedReason) : HomeResult
+    data class Failed(val output: String) : HomeResult
+}
+
+/** The launcher Home opens now, and the other launchers that could take its place. */
+data class HomeOptions(val current: String, val others: Set<String>)
+
 class Actions(private val shell: AdbShell) {
 
     suspend fun run(action: Action, pkg: String): ActionResult {
@@ -51,8 +61,58 @@ class Actions(private val shell: AdbShell) {
         return current.ifEmpty { packagesIn(shell.shell(Commands.HOME_ACTIVITIES).output) - "android" }
     }
 
-    private fun packagesIn(brief: String): Set<String> =
-        brief.lineSequence().map(String::trim).filter { '/' in it && ' ' !in it }.map { it.substringBefore('/') }.toSet()
+    /** Null when the TV has no default home (it asks each time) or didn't answer. */
+    suspend fun homeOptions(): HomeOptions? {
+        val current = currentHome()?.substringBefore('/') ?: return null
+        return HomeOptions(current, launchers().keys - current)
+    }
+
+    /**
+     * Makes [pkg] the home screen in place of the current one, then disables the old launcher so
+     * the TV can't switch back by itself. Home is checked to open [pkg] before anything is
+     * disabled; if it doesn't, the old home is set back and nothing is turned off.
+     */
+    suspend fun makeHome(pkg: String): HomeResult {
+        require(PACKAGE.matches(pkg)) { "not a package name: $pkg" }
+        val from = currentHome() ?: return HomeResult.Refused(ProtectedReason.UNKNOWN_HOME)
+        val old = from.substringBefore('/')
+        if (old == pkg) return HomeResult.Failed("it's already the home screen")
+        val to = launchers()[pkg] ?: return HomeResult.Failed("it has no home screen")
+        // The old launcher is protected as the home screen and by name; once it isn't Home, that
+        // guard has done its job. Any other reason still stands.
+        Protected.reason(old)?.takeIf { it != ProtectedReason.HOME_SCREEN }?.let { return HomeResult.Refused(it) }
+        if (!setHome(to)) {
+            setHome(from)
+            return HomeResult.Failed("the TV kept its own home screen, so nothing was turned off")
+        }
+        val off = exec("pm disable-user --user 0 $old", undo = null) { "disabled-user" in it }
+        if (off is ActionResult.Failed) {
+            setHome(from)
+            return HomeResult.Failed(off.output)
+        }
+        return HomeResult.Switched(from, to)
+    }
+
+    /** Makes [activity] (`package/class`) the default home, then checks that Home opens it. */
+    suspend fun setHome(activity: String): Boolean {
+        require(ACTIVITY.matches(activity)) { "not an activity: $activity" }
+        shell.shell("${Commands.SET_HOME} '$activity' 2>&1") // a nested class has a $
+        return currentHome()?.substringBefore('/') == activity.substringBefore('/')
+    }
+
+    /** The activity Home opens, or null when Android would ask (its chooser lives in `android`). */
+    private suspend fun currentHome(): String? =
+        activitiesIn(shell.shell(Commands.HOME_ACTIVITY).output).singleOrNull()?.takeUnless { it.startsWith("android/") }
+
+    /** Every enabled launcher, package to its home activity. */
+    private suspend fun launchers(): Map<String, String> =
+        activitiesIn(shell.shell(Commands.HOME_ACTIVITIES).output).filterNot { it.startsWith("android/") }
+            .associateBy { it.substringBefore('/') }
+
+    private fun packagesIn(brief: String): Set<String> = activitiesIn(brief).map { it.substringBefore('/') }.toSet()
+
+    private fun activitiesIn(brief: String): List<String> =
+        brief.lineSequence().map(String::trim).filter { '/' in it && ' ' !in it }.distinct().toList()
 
     /** TV apps register under LEANBACK_LAUNCHER only; phone-style apps under LAUNCHER. Try both. */
     private suspend fun open(pkg: String): ActionResult {
@@ -74,5 +134,6 @@ class Actions(private val shell: AdbShell) {
 
     internal companion object {
         val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+|android")
+        val ACTIVITY = Regex("(${PACKAGE.pattern})/[A-Za-z0-9_.$]+")
     }
 }

@@ -27,7 +27,7 @@ object Copy {
         Action.Enable -> "Turn on"
         Action.Open -> "Open"
         Action.Uninstall -> "Uninstall"
-        Action.Change, Action.ClearCaches -> error("$action isn't an app action")
+        Action.Change, Action.ClearCaches, Action.Home -> error("$action has its own button")
     }
 
     fun confirm(action: Action) = when (action) {
@@ -36,6 +36,7 @@ object Copy {
         Action.Enable -> "Yes, turn it on"
         Action.Open -> "Yes, open it"
         Action.Uninstall -> "Yes, uninstall it"
+        Action.Home -> "Yes, switch home screen"
         Action.Change, Action.ClearCaches -> error("$action isn't an app action")
     }
 
@@ -50,7 +51,7 @@ object Copy {
             Action.Enable -> "Turns $who back on."
             Action.Open -> "Opens $who on the TV."
             Action.Uninstall -> "Removes $who and everything saved in it. This can't be undone; to get it back, install it again."
-            Action.Change, Action.ClearCaches -> error("$action isn't an app action")
+            Action.Change, Action.ClearCaches, Action.Home -> error("$action isn't a one-app action")
         }
     }
 
@@ -63,7 +64,22 @@ object Copy {
         // A setting's label is the whole sentence: "Private DNS set to …".
         Action.Change -> app
         Action.ClearCaches -> "Cleared $app"
+        Action.Home -> "Made $app your home screen"
     }
+
+    fun makeHome(app: String) = "Make $app your home screen"
+
+    /**
+     * The home switch touches two apps, so it names both. The old launcher is disabled, not just
+     * replaced: otherwise many TVs switch back to it by themselves.
+     */
+    fun explainHome(app: String, pkg: String, current: String, currentPkg: String) = buildString {
+        append("Makes $app ($pkg) open when you press Home, then disables $current ($currentPkg) so the TV can't switch back by itself. ")
+        append("Undo in History turns $current back on and makes it Home again.")
+        if (currentPkg in GOOGLE_HOMES) append("\n\nSome Google TV features, like the Apps row and the Live tab, are part of $current and go away with it.")
+    }
+
+    private val GOOGLE_HOMES = setOf("com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx")
 
     /**
      * Force-stop has no true undo, and undoing a Turn on disables the app; the button says what it

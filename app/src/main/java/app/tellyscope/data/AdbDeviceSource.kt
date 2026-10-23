@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import app.tellyscope.adb.ActionResult
 import app.tellyscope.adb.ApkInfo
 import app.tellyscope.adb.Files
+import app.tellyscope.adb.HomeResult
 import app.tellyscope.adb.InstallResult
 import app.tellyscope.adb.Progress
 import app.tellyscope.adb.Sideload
@@ -252,6 +253,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     override suspend fun apps(deviceId: String): List<AppInfo> {
         val shell = session(deviceId)
         val home = Actions(shell).homePackages()
+        val homeOptions = Actions(shell).homeOptions()
         val system = Parsers.packages(shell.shell("pm list packages -s").output).map { it.name }.toSet()
         val disabled = Parsers.packages(shell.shell("pm list packages -d").output).map { it.name }.toSet()
         val userInstalled = Parsers.packages(shell.shell("pm list packages -3").output).map { it.name }.toSet()
@@ -283,6 +285,7 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 version = "",
                 icon = name.icon,
                 removable = p.name in userInstalled && p.name !in keep,
+                homeInstead = homeOptions?.takeIf { p.name in it.others && it.current !in keep }?.current,
             )
         }.sortedBy { it.label.lowercase() }
     }
@@ -333,19 +336,48 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 throw IllegalStateException(KEEP_REASON)
             }
         }
+        if (action == Action.Home) return makeHome(deviceId, packageName, undoing)
         val r = Actions(shell).run(AdbAction.valueOf(action.name.uppercase()), packageName)
         return when (r) {
-            is ActionResult.Done -> book.record(
-                deviceId = key,
-                at = System.currentTimeMillis(),
-                action = action,
-                packageName = packageName,
-                label = labels[packageName] ?: AppNames.fallback(packageName),
-                undo = r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                undoing = undoing,
-            )
+            is ActionResult.Done -> {
+                // Undoing a home switch: the old launcher is on again, now make it Home again too.
+                val switch = undoing?.let { id -> book.entries(key).firstOrNull { it.id == id && it.action == Action.Home } }
+                val back = switch?.previous?.get("from")?.let { Actions(shell).setHome(it) }
+                book.record(
+                    deviceId = key,
+                    at = System.currentTimeMillis(),
+                    action = action,
+                    packageName = packageName,
+                    label = labels[packageName] ?: AppNames.fallback(packageName),
+                    // Disabling the home screen is refused anyway; offer no undo that can't work.
+                    undo = if (switch != null) null else r.undo?.let { Action.valueOf(it.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    undoing = undoing,
+                ).also { if (back == false) throw IllegalStateException(homeNotBack(it.label)) }
+            }
             is ActionResult.Refused -> throw IllegalStateException(reasonText(r.reason))
             is ActionResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
+        }
+    }
+
+    private suspend fun makeHome(deviceId: String, packageName: String, undoing: Long?): HistoryEntry {
+        val key = key(deviceId)
+        val old = Actions(session(deviceId)).homeOptions()?.current
+        if (old != null && keepRefuses(Action.Disable, old, keep[key] ?: resolve(deviceId).list?.keep.orEmpty())) {
+            throw IllegalStateException(KEEP_REASON)
+        }
+        return when (val r = Actions(session(deviceId)).makeHome(packageName)) {
+            is HomeResult.Switched -> book.record(
+                deviceId = key,
+                at = System.currentTimeMillis(),
+                action = Action.Home,
+                packageName = r.from.substringBefore('/'),
+                label = labels[packageName] ?: AppNames.fallback(packageName),
+                undo = Action.Enable,
+                undoing = undoing,
+                previous = mapOf("from" to r.from, "to" to r.to),
+            )
+            is HomeResult.Refused -> throw IllegalStateException(reasonText(r.reason))
+            is HomeResult.Failed -> throw IllegalStateException(r.output.ifEmpty { "the TV refused" })
         }
     }
 
@@ -527,6 +559,9 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         Parsers.TcpSocket.SYN_SENT, Parsers.TcpSocket.SYN_RECV -> "connecting"
         else -> "closing"
     }
+
+    private fun homeNotBack(app: String) =
+        "turned $app back on, but the TV kept the other home screen. Press Home on the remote to pick $app"
 
     /** Copy from the protected-apps table in the UX copy doc. */
     private fun reasonText(r: ProtectedReason) = when (r) {

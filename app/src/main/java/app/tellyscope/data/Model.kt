@@ -100,6 +100,8 @@ data class AppInfo(
     val icon: ByteArray? = null,
     /** Installed by the user (`pm list packages -3`), so Uninstall is offered. Never for apps that came with the TV. */
     val removable: Boolean = false,
+    /** Another launcher that can replace the current home screen, [homeInstead]: "Make it your home screen" is offered. */
+    val homeInstead: String? = null,
 )
 
 data class Socket(val app: String, val remote: String, val state: String)
@@ -118,9 +120,12 @@ data class NetworkInfo(
 
 /**
  * [Change] sets one [app.tellyscope.adb.Tweak]: its entry's packageName is the tweak's name and
- * [HistoryEntry.previous] holds what Undo writes back. [ClearCaches] has no undo.
+ * [HistoryEntry.previous] holds what Undo writes back. [ClearCaches] has no undo. [Home] makes a
+ * launcher the home screen and disables the old one: its entry's packageName is the old launcher,
+ * the label the new one's, and [HistoryEntry.previous] holds both home activities ("from", "to").
+ * Its undo is [Enable], which also makes the old launcher Home again.
  */
-enum class Action { Stop, Disable, Enable, Open, Uninstall, Change, ClearCaches }
+enum class Action { Stop, Disable, Enable, Open, Uninstall, Change, ClearCaches, Home }
 
 data class HistoryEntry(
     val id: Long,

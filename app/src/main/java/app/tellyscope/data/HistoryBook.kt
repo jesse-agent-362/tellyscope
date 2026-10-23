@@ -69,7 +69,7 @@ class HistoryBook(private val file: File? = null) {
     /** The newest disable of [packageName] that nothing has undone yet: what Restore reverses. */
     @Synchronized
     fun openDisable(deviceId: String, packageName: String): Long? = entries
-        .filter { it.deviceId == deviceId && it.packageName == packageName && it.action == Action.Disable && it.undoneAt == null }
+        .filter { it.deviceId == deviceId && it.packageName == packageName && it.action.disables && it.undoneAt == null }
         .maxOfOrNull { it.id }
 
     /**
@@ -86,12 +86,15 @@ class HistoryBook(private val file: File? = null) {
     }
 
     companion object {
-        /** Packages whose last disable/enable in [history] was a disable; an uninstall clears it. */
+        /**
+         * Packages whose last disable/enable in [history] was a disable (a home switch disables the
+         * old launcher); an uninstall clears it.
+         */
         fun leftDisabled(history: List<HistoryEntry>): List<String> =
-            history.filter { it.action == Action.Disable || it.action == Action.Enable || it.action == Action.Uninstall }
+            history.filter { it.action.disables || it.action == Action.Enable || it.action == Action.Uninstall }
                 .sortedBy { it.id }
                 .associate { it.packageName to it.action }
-                .filterValues { it == Action.Disable }
+                .filterValues { it.disables }
                 .keys.sorted()
     }
 
@@ -150,6 +153,8 @@ class HistoryBook(private val file: File? = null) {
 }
 
 private const val VERSION = "v1"
+
+private val Action.disables get() = this == Action.Disable || this == Action.Home
 
 /**
  * Turns apps back on one at a time and stops at the first refusal, saying how far it got so the
