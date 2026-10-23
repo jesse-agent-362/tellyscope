@@ -39,7 +39,7 @@ jobs:
               '[.[] | select(.base.ref == "dev" and .merged_at != null)]
                | if length == 0 then "" else any(.[]; .title | ascii_downcase | contains("[release]")) end') || PUBLISH=
             [ -n "$PUBLISH" ] && break
-            [ "$try" -lt 6 ] && sleep 10
+            [ "$try" -lt 6 ] && echo "No merged PR linked to ${GITHUB_SHA::7} yet (try $try of 6); asking again in 10 s" && sleep 10
           done
           if [ "$PUBLISH" != true ]; then
             echo "::notice::No merged PR into dev with [release] in its title for ${GITHUB_SHA::7}; no alpha this time"
