@@ -14,11 +14,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Alpha: every push to dev publishes the next v<versionName>-alpha.N as a
-  # pre-release; pushing such a tag on a dev commit by hand does the same for
-  # that tag. app.tellyscope.alpha installs next to the release build.
+  # A push to dev publishes an alpha only when it came from a PR into dev whose
+  # title contains [release]; anything else ends here, green. No secrets in this
+  # job, and the title only ever reaches jq, never a shell.
+  alpha-gate:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      publish: ${{ steps.marker.outputs.publish }}
+    steps:
+      - name: "[release] in the PR title"
+        id: marker
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PUBLISH=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq \
+            'any(.[]; .base.ref == "dev" and .merged_at != null and (.title | ascii_downcase | contains("[release]")))')
+          if [ "$PUBLISH" != true ]; then
+            echo "::notice::No merged PR into dev with [release] in its title for ${GITHUB_SHA::7}; no alpha this time"
+            PUBLISH=false
+          fi
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+  # Alpha: publishes the next v<versionName>-alpha.N as a pre-release for a
+  # [release] merge into dev; pushing such a tag on a dev commit by hand does the
+  # same for that tag. app.tellyscope.alpha installs next to the release build.
   alpha:
-    if: github.ref_type == 'tag' || github.ref == 'refs/heads/dev'
+    needs: alpha-gate
+    # always(): a tag push skips the gate, and a skipped need would skip this job too.
+    if: always() && (github.ref_type == 'tag' || needs.alpha-gate.outputs.publish == 'true')
     runs-on: ubuntu-latest
     # Its own key, in its own Environment: an alpha can never update a prod install, and a dev
     # push never sees the prod key.
