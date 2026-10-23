@@ -27,7 +27,7 @@ import app.tellyscope.data.Update
 fun UpdateDialog(update: Update, onGet: () -> Unit, onLater: () -> Unit, onSkip: () -> Unit) {
     AlertDialog(
         onDismissRequest = onLater,
-        title = { Text("Tellyscope ${update.version} is out") },
+        title = { Text("🎉 Tellyscope ${update.version} is out") },
         text = {
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                 Text(boldSpans(dialogNotes(update.notes).ifEmpty { "No release notes." }), style = MaterialTheme.typography.bodyMedium)
