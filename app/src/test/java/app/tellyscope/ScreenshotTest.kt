@@ -21,6 +21,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import app.tellyscope.adb.ApkInfo
 import app.tellyscope.adb.ConnectionRequest
 import app.tellyscope.adb.InstallRefusal
@@ -672,8 +676,7 @@ class ScreenshotTest {
         compose.onNodeWithText("Disable 4 apps?").assertExists()
     }
 
-    // Tall, like device_history: frame.py shows it scrolled down to History under the top bar.
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    // Phone-sized, like every README shot: Recent changes (item 1 on Tweaks) scrolled to the top.
     @Test fun readme_history() {
         val history = listOf(
             HistoryEntry(4, xgimi.ip, now - 40_000, Action.Disable, "com.google.android.tvrecommendations", "TV Recommendations", Action.Enable, null),
@@ -681,7 +684,7 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, null),
             HistoryEntry(1, xgimi.ip, now - 2 * 3_600_000, Action.Stop, "com.google.android.youtube.tv", "YouTube", Action.Open, now - 3_500_000),
         )
-        shot("22_readme_history") { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
+        shot("22_readme_history", before = { compose.onNode(hasScrollAction()).performScrollToIndex(1); Unit }) { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
         compose.onNodeWithText("Restore everything (2)").assertExists()
     }
     @Test fun readme_install() {
@@ -694,8 +697,6 @@ class ScreenshotTest {
         sideload("23_readme_install", SideloadUi(SideloadUi.Step.Ready, netflix, InstalledVersion(11_200, "11.2.0")))
     }
 
-    // Tall, like readme_history: frame.py scrolls it down to Files.
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun readme_files() {
         val files = listOf(
             TvFile("subtitles.srt", 61_000, now - 40 * 60_000L),
@@ -708,16 +709,13 @@ class ScreenshotTest {
         compose.onNodeWithText("wallpaper-mountains.jpg").assertExists()
     }
 
-    // Tall, like readme_history: frame.py scrolls it down to TV tweaks.
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun readme_tweaks() {
         val tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null)
         shot("29_readme_tweaks") { DeviceTabsScreen(deviceState { copy(tweaks = tweaks) }, DeviceActions(), startTab = TvTab.Tweaks) }
         compose.onNodeWithText(Copy.dnsState(TvSettings.ADGUARD)).assertExists()
     }
 
-    // Tall, like readme_history: frame.py scrolls it down to the confirm.
-    @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
+    // The list scrolls to the confirm, as a user would.
     @Test fun readme_home() {
         // Google TV's own launcher is Home; Projectivy, installed by the user, offers to replace it.
         val stock = AppInfo("com.google.android.tvlauncher", "Google TV Home", 0xFF1A73E8, true, true, "this is your home screen", "1.0.4")
@@ -725,7 +723,7 @@ class ScreenshotTest {
             val projectivy = { a: AppInfo -> a.copy(protectedReason = null, system = false, removable = true, homeInstead = stock.packageName) }
             copy(apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it }, pending = "com.spocky.projengmenu" to Action.Home)
         }
-        shot("30_readme_home") { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
+        shot("30_readme_home", before = { compose.onNode(hasScrollAction()).performScrollToNode(hasText("Yes, switch home screen")); Unit }) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("Yes, switch home screen").assertExists()
     }
 

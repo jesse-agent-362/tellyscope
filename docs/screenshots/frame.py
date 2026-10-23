@@ -16,25 +16,24 @@ from PIL import Image, ImageDraw
 SRC = Path("app/build/outputs/roborazzi")
 OUT = Path(__file__).parent
 
-# Output name, the screenshot it comes from, and how far down the page it is scrolled, in dp.
-# Tall renders are cut to one phone screen; a scrolled one keeps its top bar, as on a phone.
+# Output name and the phone-sized screenshot it comes from. The tests scroll the page themselves,
+# so the top bar and the tabs along the bottom stay in shot.
 SHOTS = {
-    "tv-page": ("04_device", 0),
-    "debloat": ("20_readme_debloat", 0),
-    "debloat-confirm": ("21_readme_confirm", 0),
-    "install": ("23_readme_install", 0),
-    "send": ("25_readme_send", 0),
-    "files": ("24_readme_files", 400),
-    "history": ("22_readme_history", 300),
-    "tweaks": ("29_readme_tweaks", 645),
-    "request": ("17_device_request", 0),
-    "home": ("30_readme_home", 600),
-    "uninstall": ("27_apps_uninstall_confirm", 0),
+    "tv-page": "04_device",
+    "debloat": "20_readme_debloat",
+    "debloat-confirm": "21_readme_confirm",
+    "install": "23_readme_install",
+    "send": "25_readme_send",
+    "files": "24_readme_files",
+    "history": "22_readme_history",
+    "tweaks": "29_readme_tweaks",
+    "request": "17_device_request",
+    "home": "30_readme_home",
+    "uninstall": "27_apps_uninstall_confirm",
 }
 
 DP = 3  # the tests render at xxhdpi
 SCREEN_DP = 891  # the tests' 411 x 891 dp phone
-TOP_BAR_DP = 64
 
 WIDTH = 540  # screen width in the output; GitHub shows it at about half that
 STATUS = 30  # status bar height, where the camera sits
@@ -42,15 +41,9 @@ BEZEL = 14
 RADIUS = 46
 
 
-def frame(src: Path, scroll_dp: int) -> Image.Image:
+def frame(src: Path) -> Image.Image:
     shot = Image.open(src).convert("RGB")
-    phone_h, bar, scroll = SCREEN_DP * DP, TOP_BAR_DP * DP, scroll_dp * DP
-    if scroll:
-        page = shot.crop((0, bar + scroll, shot.width, scroll + phone_h))
-        shot = shot.crop((0, 0, shot.width, phone_h))
-        shot.paste(page, (0, bar))
-    else:
-        shot = shot.crop((0, 0, shot.width, min(shot.height, phone_h)))
+    shot = shot.crop((0, 0, shot.width, min(shot.height, SCREEN_DP * DP)))
     shot = shot.resize((WIDTH, shot.height * WIDTH // shot.width), Image.LANCZOS)
 
     # A status bar in the app's own top colour, as on a phone.
@@ -70,6 +63,6 @@ def frame(src: Path, scroll_dp: int) -> Image.Image:
 
 
 if __name__ == "__main__":
-    for name, (src, scroll) in SHOTS.items():
-        frame(SRC / f"{src}.png", scroll).save(OUT / f"{name}.png", optimize=True)
+    for name, src in SHOTS.items():
+        frame(SRC / f"{src}.png").save(OUT / f"{name}.png", optimize=True)
         print(f"{name}.png")
