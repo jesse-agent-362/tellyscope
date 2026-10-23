@@ -40,27 +40,24 @@ public final class Labels {
             for (String a : args) names.add(a);
         }
         for (String name : names) {
+            // The whole line is built before any of it is printed: a throw halfway used to leave an
+            // unclosed object that glued itself to the next app's line, and the app lost both.
             try {
                 PackageInfo p = pm.getPackageInfo(name, 0);
                 ApplicationInfo ai = p.applicationInfo;
                 if (ai == null) continue;
-                out.print("{\"p\":");
-                string(out, name);
-                out.print(",\"l\":");
-                string(out, ai.loadLabel(pm).toString());
-                out.print(",\"v\":");
-                out.print(versionCode(p));
-                // TV-only apps often ship a banner and no icon, which would draw as the generic robot.
-                Drawable art = ai.icon == 0 && ai.banner != 0 ? ai.loadBanner(pm) : ai.loadIcon(pm);
-                String icon = icon(art);
-                if (icon != null) {
-                    out.print(",\"i\":\"");
-                    out.print(icon);
-                    out.print('"');
-                }
-                out.print("}\n");
-            } catch (Exception e) {
-                // One unreadable app (gone since the list, broken resources) doesn't stop the rest.
+                StringBuilder line = new StringBuilder("{\"p\":");
+                string(line, name);
+                line.append(",\"l\":");
+                string(line, ai.loadLabel(pm).toString());
+                line.append(",\"v\":").append(versionCode(p));
+                String icon = icon(pm, ai);
+                if (icon != null) line.append(",\"i\":\"").append(icon).append('"');
+                line.append("}\n");
+                out.print(line);
+            } catch (Throwable t) {
+                // One unreadable app (gone since the list, broken resources, a drawable that runs the
+                // helper out of memory) doesn't stop the rest.
             }
         }
         out.flush();
@@ -84,10 +81,38 @@ public final class Labels {
         return Build.VERSION.SDK_INT >= 28 ? p.getLongVersionCode() : p.versionCode;
     }
 
-    private static String icon(Drawable d) {
+    /**
+     * The first artwork that loads and draws: the icon, the banner, then PackageManager's own pick.
+     * TV-only apps often ship a banner and no icon, which would draw as the generic robot, so for
+     * them the banner goes first.
+     */
+    private static String icon(PackageManager pm, ApplicationInfo ai) {
+        int first = ai.icon == 0 && ai.banner != 0 ? BANNER : ICON;
+        for (int kind : new int[] {first, first == ICON ? BANNER : ICON, APPLICATION_ICON}) {
+            try {
+                String png = render(art(pm, ai, kind));
+                if (png != null) return png;
+            } catch (Throwable t) {
+                // Try the next one; the label is still worth sending without any.
+            }
+        }
+        return null;
+    }
+
+    private static final int ICON = 0, BANNER = 1, APPLICATION_ICON = 2;
+
+    private static Drawable art(PackageManager pm, ApplicationInfo ai, int kind) {
+        switch (kind) {
+            case ICON: return ai.loadIcon(pm);
+            case BANNER: return ai.loadBanner(pm); // null when the app has none
+            default: return pm.getApplicationIcon(ai);
+        }
+    }
+
+    private static String render(Drawable d) {
         if (d == null) return null;
+        Bitmap b = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888);
         try {
-            Bitmap b = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888);
             // Fit, centred: a 16:9 banner keeps its shape instead of being squashed square.
             int w = d.getIntrinsicWidth(), h = d.getIntrinsicHeight();
             if (w > 0 && h > 0 && w != h) {
@@ -100,27 +125,26 @@ public final class Labels {
             d.draw(new Canvas(b));
             ByteArrayOutputStream png = new ByteArrayOutputStream();
             b.compress(Bitmap.CompressFormat.PNG, 100, png);
-            b.recycle();
             return Base64.encodeToString(png.toByteArray(), Base64.NO_WRAP);
-        } catch (Exception e) {
-            return null; // the label is still worth sending
+        } finally {
+            b.recycle();
         }
     }
 
     /** JSON string, ASCII only: anything outside printable ASCII is a \\u escape. */
-    private static void string(PrintStream out, String s) {
-        out.print('"');
+    private static void string(StringBuilder out, String s) {
+        out.append('"');
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (c == '"' || c == '\\') {
-                out.print('\\');
-                out.print(c);
+                out.append('\\');
+                out.append(c);
             } else if (c < 0x20 || c > 0x7e) {
-                out.print(String.format("\\u%04x", (int) c));
+                out.append(String.format("\\u%04x", (int) c));
             } else {
-                out.print(c);
+                out.append(c);
             }
         }
-        out.print('"');
+        out.append('"');
     }
 }

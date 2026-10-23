@@ -71,6 +71,19 @@ class AppNamesTest {
         assertEquals(listOf("com.netflix.ninja", "com.google.android.youtube.tv"), helper.runs.last())
     }
 
+    @Test fun anIconlessEntryIsAskedForOnceMorePerLaunch() = runBlocking {
+        // One run lost Netflix's icon; the cache kept the label without it.
+        AppNames(tmp.root).names("SN1", listOf(netflix, odd), { listOf(AppLabel(netflix.name, "Netflix", 10, null), AppLabel(odd.name, "Weather", 3, icon)) })
+        val helper = Helper().apply { versions = mutableMapOf(netflix.name to 10) }
+        val later = AppNames(tmp.root)
+        val names = later.names("SN1", listOf(netflix, odd), helper::describe)
+        assertEquals(listOf(listOf(netflix.name)), helper.runs)
+        assertArrayEquals(icon, names.getValue(netflix.name).icon)
+        // Asked once this launch: not again, even if that run had also come back without one.
+        later.names("SN1", listOf(netflix, odd), helper::describe)
+        assertEquals(1, helper.runs.size)
+    }
+
     @Test fun cacheIsPerTv() = runBlocking {
         val helper = Helper()
         val appNames = AppNames(tmp.root)
@@ -89,7 +102,7 @@ class AppNamesTest {
     }
 
     @Test fun damagedCacheLinesCostOnlyThatApp() = runBlocking {
-        File(tmp.root, "SN1.tsv").writeText("com.netflix.ninja\t10\tNetflix\t\ngarbage line\ncom.example.weatherbox\tx\tW\t\n")
+        File(tmp.root, "SN1.tsv").writeText("com.netflix.ninja\t10\tNetflix\tAQID\ngarbage line\ncom.example.weatherbox\tx\tW\t\n")
         val helper = Helper()
         val names = AppNames(tmp.root).names("SN1", listOf(netflix, odd), helper::describe)
         assertEquals("Netflix", names.getValue("com.netflix.ninja").label)

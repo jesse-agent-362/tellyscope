@@ -24,6 +24,8 @@ class AppNames(private val dir: File) {
     private val refused = mutableSetOf<String>()
     /** Asked for and not described (no readable app info): don't run the helper again just for these. */
     private val unanswered = mutableSetOf<Pair<String, String>>()
+    /** Asked for in this launch. A cached entry without an icon is asked for once more per launch. */
+    private val asked = mutableSetOf<Pair<String, String>>()
 
     /**
      * [tv] identifies the TV (its [historyKey]); [packages] is `pm list packages --show-versioncode`.
@@ -39,10 +41,13 @@ class AppNames(private val dir: File) {
         val stale = packages.filter { p ->
             val hit = cache[p.name]
             // Without a versionCode (an older pm) a cached label is as good as it gets.
-            (hit == null || (p.versionCode != null && p.versionCode != hit.versionCode)) && (tv to p.name) !in unanswered
+            val outdated = hit == null || (p.versionCode != null && p.versionCode != hit.versionCode)
+            // A run where the icon failed once mustn't cost the app its icon until its next update.
+            (outdated || (hit?.iconPng == null && (tv to p.name) !in asked)) && (tv to p.name) !in unanswered
         }
         if (stale.isNotEmpty() && tv !in refused) {
             val fresh = describe(stale.map { it.name })
+            stale.forEach { asked += tv to it.name }
             if (fresh == null) {
                 refused += tv
             } else {

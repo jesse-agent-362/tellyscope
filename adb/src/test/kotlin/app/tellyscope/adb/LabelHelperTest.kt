@@ -44,6 +44,16 @@ class LabelHelperTest {
         assertNull(apps[1].iconPng)
     }
 
+    @Test fun aHalfPrintedLineCostsTheNextAppToo() {
+        // What the helper printed when loadIcon threw after the label: no closing brace, no newline,
+        // so the next app's object landed on the same line. The helper now prints whole lines only.
+        val out = """
+            {"p":"com.apple.atve.androidtv.appletv","l":"Apple TV","v":7{"p":"org.jellyfin.androidtv","l":"Jellyfin","v":2,"i":"$b64"}
+            {"p":"com.netflix.ninja","l":"Netflix","v":1,"i":"$b64"}
+        """.trimIndent()
+        assertEquals(listOf("com.netflix.ninja"), LabelHelper.parse(out).map { it.packageName })
+    }
+
     @Test fun pushesRunsAndDeletes() = runTest {
         val sh = FakeShell(mapOf("CLASSPATH=" to ok("""{"p":"com.a","l":"A","v":7}""" + "\n")))
         val apps = LabelHelper(sh, dex).describe(listOf("com.a", "com.b"))
