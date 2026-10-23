@@ -28,6 +28,7 @@ import app.tellyscope.adb.ProtectedReason
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
 import app.tellyscope.adb.PairResult
+import app.tellyscope.adb.pairOnFreshPort
 import app.tellyscope.adb.Tweak
 import app.tellyscope.adb.Tweaks
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
@@ -208,7 +209,14 @@ class AdbDeviceSource(context: Context) : DeviceSource {
     }
 
     override suspend fun pair(hit: ScanHit, code: String): ConnectResult {
-        when (val r = Connector.pair(hit.ip, pairingPorts[hit.ip] ?: hit.port, code)) {
+        // A port typed for add-by-IP, else the last one a scan saw; never the connect port.
+        val hint = hit.port.takeIf { it != hits[hit.ip]?.port } ?: pairingPorts[hit.ip]
+        val r = pairOnFreshPort(
+            hint,
+            find = { LanScanner(KadbMdnsAndroid(appContext)).pairingPort(hit.ip) },
+            pair = { Connector.pair(hit.ip, it, code) },
+        )
+        when (r) {
             PairResult.Paired -> Unit
             is PairResult.WrongCode -> return ConnectResult.WrongCode(r.reason)
             is PairResult.Unreachable -> return ConnectResult.Unreachable(r.reason)

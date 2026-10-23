@@ -8,6 +8,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -86,6 +88,24 @@ class LanScanner(
                         send(ScanHit(e.host, e.port, kind, e.name))
                     }
                 }
+            }
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) { mdns.stop() }
+        }
+    }
+
+    /**
+     * The port [host] advertises for "pair with code" right now, or null when none shows up within the
+     * mDNS window. The TV only advertises it while that dialog is open, and picks a new one each time.
+     */
+    suspend fun pairingPort(host: String): Int? {
+        val mdns = mdns ?: return null
+        withContext(Dispatchers.IO) { mdns.start() }
+        return try {
+            withTimeoutOrNull(mdnsWindow) {
+                mdns.state.mapNotNull { s ->
+                    s.allDevices.firstOrNull { it.host == host && it.serviceType == MdnsServiceType.TLS_PAIRING }?.port
+                }.first()
             }
         } finally {
             withContext(NonCancellable + Dispatchers.IO) { mdns.stop() }

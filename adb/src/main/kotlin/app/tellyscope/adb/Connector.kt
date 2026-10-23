@@ -37,6 +37,20 @@ sealed interface PairResult {
 }
 
 /**
+ * Pairs on the port the TV advertises now: [find] browses for it first, and [hint] (a port seen in an
+ * earlier scan, or one the user typed) is only the fallback, since every reopen of the TV's pairing
+ * dialog picks a new port. A refused port gets one more browse before giving up. Never guesses the
+ * connect port: that one doesn't answer pairing.
+ */
+suspend fun pairOnFreshPort(hint: Int?, find: suspend () -> Int?, pair: suspend (Int) -> PairResult): PairResult {
+    val port = find() ?: hint
+        ?: return PairResult.Unreachable("the TV isn't offering pairing; keep \"Pair device with pairing code\" open on it")
+    val r = pair(port)
+    if (r !is PairResult.Unreachable) return r
+    return find()?.takeIf { it != port }?.let { pair(it) } ?: r
+}
+
+/**
  * Opens ADB connections with one persisted host key, so the TV's "always allow" survives restarts.
  * Call [init] once per process before anything else.
  */
