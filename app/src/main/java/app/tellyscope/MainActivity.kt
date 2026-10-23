@@ -153,6 +153,9 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
         UpdateDialog(u, onGet = { vm.updateLater(); runCatching { browser.openUri(u.url) } }, onLater = vm::updateLater, onSkip = vm::skipUpdate)
     }
 
+    // On every return to the app, not just a cold start; the check itself enforces the interval.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.checkForUpdate() }
+
     Snackbars(snackbar, vm.done, vm.notice, vm::doneShown, vm::noticeShown) { vm.undo(it.entry, it.deviceId) }
 
     // A newly connected TV becomes the selection; leave the add flow then, not on tap.
@@ -191,6 +194,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             state.listSource,
             onListSource = vm::setListSource,
             checkUpdates = state.checkUpdates,
+            alphaBuild = state.alphaBuild,
             onCheckUpdates = vm::setCheckUpdates,
             back = { settings = false },
             snackbar = snackbar,

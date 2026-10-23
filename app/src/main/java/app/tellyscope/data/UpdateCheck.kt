@@ -13,13 +13,15 @@ import java.util.Properties
 const val RELEASES = "https://github.com/man15h/tellyscope/releases"
 private const val RELEASES_API = "https://api.github.com/repos/man15h/tellyscope/releases?per_page=20"
 
-private const val DAY_MS = 24 * 60 * 60 * 1000L
+/** How long a check counts for: release builds ask every 6 hours, alpha builds every 5 minutes for testing. */
+private const val RELEASE_INTERVAL_MS = 6 * 60 * 60 * 1000L
+private const val ALPHA_INTERVAL_MS = 5 * 60 * 1000L
 
 /** A newer Tellyscope than the one running. */
 data class Update(val version: String, val notes: String, val url: String)
 
 /**
- * Asks GitHub, at most once a day, whether a newer release is out. No auth and no download: it
+ * Asks GitHub, at most every 6 hours (5 minutes on alpha builds), whether a newer release is out. No auth and no download: it
  * only reads the release list. Off switch, last check and a skipped version live in [file].
  * Release builds look at full releases only; alpha builds at `-alpha` pre-releases too.
  */
@@ -27,7 +29,7 @@ class UpdateCheck(
     private val file: File,
     /** The running versionName, alpha suffix included. */
     private val current: String,
-    private val alpha: Boolean,
+    val alpha: Boolean,
     private val clock: () -> Long = System::currentTimeMillis,
     private val fetch: suspend (String) -> ByteArray = ::download,
 ) {
@@ -39,13 +41,14 @@ class UpdateCheck(
     @Synchronized
     fun skip(version: String) = save { setProperty("skip", version) }
 
-    /** The newest release past [current], unless it was skipped. Null when off, checked today, or on any failure. */
+    /** The newest release past [current], unless it was skipped. Null when off, checked recently, or on any failure. */
     suspend fun check(): Update? = withContext(Dispatchers.IO) {
         val p = props()
         if (p.getProperty("off") == "true") return@withContext null
         val last = p.getProperty("checked")?.toLongOrNull()
         val now = clock()
-        if (last != null && now - last in 0 until DAY_MS) return@withContext null
+        val interval = if (alpha) ALPHA_INTERVAL_MS else RELEASE_INTERVAL_MS
+        if (last != null && now - last in 0 until interval) return@withContext null
         val text = try {
             fetch(RELEASES_API).decodeToString()
         } catch (e: CancellationException) {

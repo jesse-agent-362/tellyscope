@@ -49,6 +49,8 @@ fun SettingsScreen(
     onListSource: (String?) -> Unit,
     /** Null hides the switch: this build doesn't check (screenshots). */
     checkUpdates: Boolean?,
+    /** Alpha builds check every 5 minutes, release builds every 6 hours. */
+    alphaBuild: Boolean,
     onCheckUpdates: (Boolean) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
@@ -93,7 +95,8 @@ fun SettingsScreen(
                         Column(Modifier.weight(1f)) {
                             Text("Check for updates", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "Once a day, ask GitHub whether a newer Tellyscope is out. Nothing is downloaded.",
+                                (if (alphaBuild) "Every 5 minutes on alpha builds" else "Every 6 hours") +
+                                    ", ask GitHub whether a newer Tellyscope is out. Nothing is downloaded.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }

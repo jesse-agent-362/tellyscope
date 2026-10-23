@@ -128,6 +128,8 @@ data class UiState(
     val listSource: String? = null,
     /** The once-a-day look at GitHub for a newer release; null when this build has none (screenshots, tests). */
     val checkUpdates: Boolean? = null,
+    /** An alpha build, which checks every 5 minutes rather than every 6 hours. */
+    val alphaBuild: Boolean = false,
     /** A newer release to offer; cleared once the user answers. */
     val update: Update? = null,
 ) {
@@ -185,6 +187,7 @@ class TellyscopeViewModel(
     private var mediumJob: Job? = null
     private var listsJob: Job? = null
     private var requestJob: Job? = null
+    private var updateJob: Job? = null
     /** The fingerprint the user waved away on the phone; its prompt stays hidden while the TV shows it. */
     private var dismissedRequest: String? = null
 
@@ -205,12 +208,7 @@ class TellyscopeViewModel(
             }
         }
         updates?.let { u ->
-            viewModelScope.launch(Dispatchers.IO) {
-                _state.update { it.copy(checkUpdates = u.enabled) }
-                // Null on any failure: no offer looks the same as no newer release.
-                val found = u.check()
-                _state.update { it.copy(update = found) }
-            }
+            viewModelScope.launch(Dispatchers.IO) { _state.update { it.copy(checkUpdates = u.enabled, alphaBuild = u.alpha) } }
         }
         rescan()
     }
@@ -780,7 +778,20 @@ class TellyscopeViewModel(
         }
     }
 
-    /** "Get it" or "Later": the offer goes away until tomorrow's check. */
+    /**
+     * Each time the app comes to the front: offers a newer release if the interval since the last
+     * check has passed. One check at a time; an offer on screen stays until it is answered.
+     */
+    fun checkForUpdate() {
+        val u = updates ?: return
+        if (updateJob?.isActive == true || _state.value.update != null) return
+        updateJob = viewModelScope.launch(Dispatchers.IO) {
+            // Null on any failure: no offer looks the same as no newer release.
+            u.check()?.let { found -> _state.update { it.copy(update = found) } }
+        }
+    }
+
+    /** "Get it" or "Later": the offer goes away until the next check. */
     fun updateLater() {
         _state.update { it.copy(update = null) }
     }

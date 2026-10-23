@@ -27,7 +27,9 @@ import java.io.IOException
 class UpdateCheckTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    private val day = 24 * 60 * 60 * 1000L
+    private val minute = 60 * 1000L
+    private val hour = 60 * minute
+    private val day = 24 * hour
 
     private fun release(tag: String, pre: Boolean = tag.contains("-alpha"), notes: String = "Notes for $tag") =
         """{"tag_name":"$tag","prerelease":$pre,"draft":false,"body":"$notes"}"""
@@ -73,16 +75,28 @@ class UpdateCheckTest {
         assertNull(check.check())
     }
 
-    @Test fun `asks at most once a day`() = runTest {
+    @Test fun `a release build asks again after 6 hours, not before`() = runTest {
         var now = 1_000_000L
         var calls = 0
         val check = UpdateCheck(tmp.newFile(), "0.1.0", alpha = false, clock = { now }) { calls++; releases(release("v0.2.0")).toByteArray() }
         assertEquals("0.2.0", check.check()?.version)
-        now += day - 1
+        now += 6 * hour - minute
         assertNull(check.check())
         assertEquals(1, calls)
-        now += 1
+        now += minute
         assertEquals("0.2.0", check.check()?.version)
+        assertEquals(2, calls)
+    }
+
+    @Test fun `an alpha build asks again after 5 minutes`() = runTest {
+        var now = 1_000_000L
+        var calls = 0
+        val check = UpdateCheck(tmp.newFile(), "0.2.0-alpha.2", alpha = true, clock = { now }) { calls++; releases(release("v0.2.0-alpha.3")).toByteArray() }
+        assertEquals("0.2.0-alpha.3", check.check()?.version)
+        now += 5 * minute - 1
+        assertNull(check.check())
+        now += 1
+        assertEquals("0.2.0-alpha.3", check.check()?.version)
         assertEquals(2, calls)
     }
 
