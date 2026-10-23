@@ -2,9 +2,11 @@
 
 package app.tellyscope
 
+import androidx.compose.ui.text.font.FontWeight
 import app.tellyscope.data.UpdateCheck
 import app.tellyscope.data.compareVersions
 import app.tellyscope.data.newest
+import app.tellyscope.ui.boldSpans
 import app.tellyscope.ui.dialogNotes
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -158,9 +160,9 @@ class UpdateCheckTest {
     @Test fun `prod notes keep the changelog lines, plain, capped at twelve`() {
         val lines = dialogNotes(prodBody).lines()
         assertEquals(13, lines.size)
-        assertEquals("- New: A new app icon: a telescope with a TV screen for a lens.", lines.first())
+        assertEquals("- **New:** A new app icon: a telescope with a TV screen for a lens.", lines.first())
         assertEquals("…and more on GitHub", lines.last())
-        assertTrue(lines.none { "**" in it || "](" in it || "Commits" in it })
+        assertTrue(lines.none { "](" in it || "Commits" in it })
     }
 
     @Test fun `alpha notes are just the alpha line`() {
@@ -171,6 +173,21 @@ class UpdateCheckTest {
     }
 
     @Test fun `short notes are not cut`() {
-        assertEquals("- Fixed: one thing.", dialogNotes("- **Fixed:** one thing. [#9](../../pull/9)\n\n### Commits since v1\n\n- x (abc)"))
+        assertEquals("- **Fixed:** one thing.", dialogNotes("- **Fixed:** one thing. [#9](../../pull/9)\n\n### Commits since v1\n\n- x (abc)"))
+    }
+
+    @Test fun `New is bold with the stars gone`() {
+        val first = boldSpans(dialogNotes(prodBody)).let { it.subSequence(0, it.text.indexOf('\n')) }
+        assertEquals("- New: A new app icon: a telescope with a TV screen for a lens.", first.text)
+        assertFalse('*' in boldSpans(dialogNotes(prodBody)).text)
+        val bold = first.spanStyles.single()
+        assertEquals(FontWeight.Bold, bold.item.fontWeight)
+        assertEquals("New:", first.text.substring(bold.start, bold.end))
+    }
+
+    @Test fun `an unmatched pair of stars is dropped`() {
+        val s = boldSpans("a **b** c ** d")
+        assertEquals("a b c  d", s.text)
+        assertEquals("b", s.spanStyles.single().let { s.text.substring(it.start, it.end) })
     }
 }
