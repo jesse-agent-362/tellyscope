@@ -21,6 +21,7 @@ until this file has a section for its version.
 - **New:** Save a screenshot of the TV to your phone. [#35](../../pull/35)
 - **New:** Allow or deny another device's connection request from your phone. [#36](../../pull/36)
 - **New:** Make another launcher, like Projectivy, your home screen; Undo restores yours. [#37](../../pull/37)
+- **New:** Use your own fork of the debloat lists, set in Settings. [#40](../../pull/40)
 
 ## 0.1.0 — 2026-10-23
 
