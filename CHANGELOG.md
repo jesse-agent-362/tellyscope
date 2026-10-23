@@ -12,7 +12,7 @@ until this file has a section for its version.
 
 ## Unreleased
 
-- **Improved:** Each TV's page has four tabs: Overview, Apps, Files and Tweaks. [#NN](../../pull/NN)
+- **Improved:** Each TV's page has four tabs: Overview, Apps, Files and Tweaks. [#60](../../pull/60)
 
 ## 0.3.0 — 2026-10-24
 
