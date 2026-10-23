@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
@@ -95,6 +96,7 @@ import app.tellyscope.ui.theme.SmallNumber
 data class DeviceActions(
     val select: (String) -> Unit = {},
     val addDevice: () -> Unit = {},
+    val settings: () -> Unit = {},
     val showOffline: (Boolean) -> Unit = {},
     val query: (String) -> Unit = {},
     val propose: (String, Action) -> Unit = { _, _ -> },
@@ -220,9 +222,7 @@ fun DeviceScreen(
                 item {
                     ActionTiles(
                         actions,
-                        // A source of the user's own that stopped answering must still be reachable to reset.
-                        canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready ||
-                            (ui.lists == Suggestions.Unavailable && state.listSource != null),
+                        canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready,
                         disabling = ui.busy == DISABLING,
                     )
                 }
@@ -448,6 +448,11 @@ private fun DevicePicker(state: UiState, actions: DeviceActions) {
                 text = { Text("Forget this TV") },
                 leadingIcon = { Icon(Icons.Default.Delete, null) },
                 onClick = { open = false; forgetting = true },
+            )
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                leadingIcon = { Icon(Icons.Default.Settings, null) },
+                onClick = { open = false; actions.settings() },
             )
             DropdownMenuItem(
                 text = { Text("About & licences") },

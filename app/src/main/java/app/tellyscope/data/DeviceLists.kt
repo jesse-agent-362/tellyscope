@@ -273,15 +273,23 @@ fun normalize(url: String): String? {
     } catch (_: java.net.URISyntaxException) {
         return null
     }
-    if (!parsed.scheme.equals("https", ignoreCase = true) || parsed.host.isNullOrEmpty() || parsed.query != null || parsed.fragment != null) return null
+    if (!parsed.scheme.equals("https", ignoreCase = true) || parsed.host.isNullOrEmpty()) return null
+    // A user:token would be saved and shown on screen.
+    if (parsed.rawUserInfo != null || parsed.query != null || parsed.fragment != null) return null
     return if (u.endsWith("/")) u else "$u/"
 }
 
-/** How a source reads on screen: `github.com/owner/repo` for raw GitHub addresses, else host and path. */
+/**
+ * How a source reads on screen: `github.com/owner/repo` for raw GitHub addresses, with the branch
+ * (and any folder) after it unless that is just `main`; else host and path.
+ */
 fun sourceName(base: String): String {
     val rest = base.substringAfter("://").trimEnd('/')
     val raw = "raw.githubusercontent.com/"
-    return if (rest.startsWith(raw)) "github.com/" + rest.removePrefix(raw).split('/').take(2).joinToString("/") else rest
+    if (!rest.startsWith(raw)) return rest
+    val parts = rest.removePrefix(raw).split('/')
+    val where = parts.drop(2).joinToString("/")
+    return "github.com/" + parts.take(2).joinToString("/") + if (where == "main" || where.isEmpty()) "" else " ($where)"
 }
 
 private const val MAX_BYTES = 2 shl 20 // 2 MiB; the index is ~60 KB

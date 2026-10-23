@@ -92,13 +92,10 @@ fun DebloatScreen(
     onDisable: (List<String>) -> Unit,
     back: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
-    /** The user's own list source, null for the default. */
+    /** The user's own list source, null for the default; set in Settings. */
     source: String? = null,
-    onSource: (String?) -> Unit = {},
 ) {
     val ready = lists as? Suggestions.Ready
-    var editing by rememberSaveable { mutableStateOf(false) }
-    if (editing) SourceDialog(source, onSave = { editing = false; onSource(it) }, onDismiss = { editing = false })
     val devices = when (lists) {
         is Suggestions.Pick -> lists.devices
         is Suggestions.Ready -> lists.devices
@@ -174,15 +171,6 @@ fun DebloatScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            Copy.listSource(source),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { editing = true }) { Text("Change") }
-                    }
                     // Empty while a picked list reloads, if they came back to change it.
                     if (devices.isEmpty()) Muted("Loading the lists…")
                     else if (shown.isEmpty()) Muted("No list matches \"${q.trim()}\".")
@@ -276,29 +264,6 @@ internal fun DisableDialog(apps: List<Suggested>, onDisable: () -> Unit, onDismi
             }
         },
         confirmButton = { Button(onClick = onDisable) { Text("Yes, disable them") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-/** Edits the list source: an HTTPS folder holding `index.json`, or back to the default. */
-@Composable
-private fun SourceDialog(source: String?, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
-    var url by rememberSaveable { mutableStateOf(source.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Where the lists come from") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "To use your own lists, fork tellyscope-devices, edit it, and paste the address of the folder that holds index.json, " +
-                        "like https://raw.githubusercontent.com/you/tellyscope-devices/main/. Protected apps stay protected whatever a list says.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedTextField(url, { url = it }, placeholder = { Text("https://…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (source != null) TextButton(onClick = { onSave(null) }) { Text("Reset to default") }
-            }
-        },
-        confirmButton = { Button(onClick = { onSave(url) }, enabled = url.isNotBlank()) { Text("Use these lists") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

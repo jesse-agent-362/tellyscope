@@ -232,7 +232,10 @@ class DeviceListsTest {
         assertNull(normalize("http://example.com/lists/"))
         assertNull(normalize("file:///sdcard/lists/"))
         assertNull(normalize("https://example.com/lists/?x=1"))
+        assertNull(normalize("https://someone:ghp_secret@raw.githubusercontent.com/someone/my-lists/main/"))
         assertEquals("github.com/someone/my-lists", sourceName(fork))
+        assertEquals("github.com/someone/my-lists (test)", sourceName("https://raw.githubusercontent.com/someone/my-lists/test/"))
+        assertEquals("github.com/someone/my-lists (main/tv)", sourceName("https://raw.githubusercontent.com/someone/my-lists/main/tv/"))
         assertEquals("example.com/lists", sourceName("https://example.com/lists/"))
     }
 }
