@@ -47,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.ScanHit
@@ -241,6 +243,7 @@ private fun CodeBoxes(code: String, onChange: (String) -> Unit, enabled: Boolean
     BasicTextField(
         value = code,
         onValueChange = onChange,
+        modifier = Modifier.semantics { contentDescription = "Pairing code" },
         enabled = enabled,
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),

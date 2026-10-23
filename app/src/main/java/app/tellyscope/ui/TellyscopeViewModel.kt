@@ -66,9 +66,6 @@ data class UiState(
     val selected: Device? get() = devices.firstOrNull { it.id == selectedId }
 }
 
-private const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
-private const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
-
 /** [DeviceUi.busy] value while "Restore everything" runs. */
 const val RESTORING = "restore"
 
@@ -166,8 +163,8 @@ class TellyscopeViewModel(
         viewModelScope.launch {
             when (val r = source.pair(hit, row.input)) {
                 is ConnectResult.Online -> online(r.device)
-                is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = WRONG_CODE, detail = r.message))
-                is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = UNREACHABLE, detail = r.message))
+                is ConnectResult.WrongCode -> setRow(hit.ip, row.copy(busy = false, error = Copy.WRONG_CODE, detail = r.message))
+                is ConnectResult.Unreachable -> setRow(hit.ip, row.copy(busy = false, error = Copy.UNREACHABLE, detail = r.message))
                 ConnectResult.NotAllowed -> setRow(hit.ip, RowState.NotAllowed)
                 ConnectResult.NeedsPairing -> setRow(hit.ip, row.copy(busy = false, error = "The TV still wants a code. Check the number on screen and try again."))
             }

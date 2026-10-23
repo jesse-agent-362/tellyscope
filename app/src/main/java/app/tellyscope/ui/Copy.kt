@@ -84,6 +84,18 @@ object Copy {
         DeviceState.Found -> "Not connected"
     }
 
+    /** Under 10 GB a whole number hides too much: a 1.5 GB TV isn't a 2 GB one. */
+    fun gbOf(used: Double, total: Double) =
+        if (total < 10) "%.1f of %.1f GB".format(used, total) else "%.1f of %.0f GB".format(used, total)
+
+    /** An offline TV that has never sent stats; a refusing TV is on, it just hasn't allowed us. */
+    fun noStats(s: DeviceState) =
+        if (s == DeviceState.NotAllowed) "Stats show up once the TV allows this phone."
+        else "No stats yet. They show up once the TV is back on."
+
+    const val WRONG_CODE = "That code didn't work. Check the 6 digits on the TV and try again."
+    const val UNREACHABLE = "The TV didn't answer. Check it's on and on the same Wi-Fi as this phone, then try again."
+
     data class Health(val ok: Boolean, val text: String)
 
     /**

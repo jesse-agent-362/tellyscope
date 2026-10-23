@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
@@ -187,7 +188,7 @@ fun DeviceScreen(
             } else if (offline) {
                 item {
                     Text(
-                        "No stats yet. They show up once the TV is back on.",
+                        Copy.noStats(device.state),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -345,8 +346,8 @@ fun RenameDialog(current: String, networkName: String, onSave: (String) -> Unit,
 private fun BrandBadge(d: Device) {
     val maker = (d.manufacturer ?: d.hit.maker)?.let(::brand) ?: return
     Box(
-        Modifier.padding(end = 10.dp).size(width = 52.dp, height = 36.dp).clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
+        Modifier.padding(end = 10.dp).widthIn(min = 52.dp).height(36.dp).clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(maker, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1)
@@ -512,7 +513,7 @@ private fun Meter(label: String, usedGb: Double, totalGb: Double) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${(frac * 100).toInt()}% used", style = StatNumber)
             }
-            Text("%.1f of %.0f GB".format(usedGb, totalGb), style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(Copy.gbOf(usedGb, totalGb), style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LinearProgressIndicator(
             progress = { frac },
