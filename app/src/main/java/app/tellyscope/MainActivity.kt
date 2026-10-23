@@ -42,7 +42,7 @@ import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
-import app.tellyscope.ui.DeviceScreen
+import app.tellyscope.ui.DeviceTabsScreen
 import app.tellyscope.ui.Done
 import app.tellyscope.ui.PermissionScreen
 import app.tellyscope.ui.RemoteActions
@@ -215,7 +215,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
             tvMakers = listOfNotNull(state.selected?.brand, state.selected?.manufacturer).distinct(),
         )
     } else {
-        DeviceScreen(
+        DeviceTabsScreen(
             state = state,
             snackbar = snackbar,
             actions = DeviceActions(

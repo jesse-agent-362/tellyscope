@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
@@ -47,7 +48,8 @@ import app.tellyscope.data.Suggestions
 import app.tellyscope.ui.AdvancedScreen
 import app.tellyscope.ui.DebloatScreen
 import app.tellyscope.ui.DeviceActions
-import app.tellyscope.ui.DeviceScreen
+import app.tellyscope.ui.DeviceTabsScreen
+import app.tellyscope.ui.TvTab
 import app.tellyscope.ui.Copy
 import app.tellyscope.ui.TweaksBlock
 import app.tellyscope.ui.DeviceUi
@@ -185,30 +187,71 @@ class ScreenshotTest {
         return ready.copy(devices = ready.devices + others)
     }
 
+    // Bottom-navigation mock-ups: the TV page as four tabs, light and dark, plus both app-bar menus.
+    private fun tabsState(): UiState {
+        val history = listOf(
+            HistoryEntry(2, xgimi.ip, now - 40_000, Action.Disable, "com.xgimi.ota", "XGIMI Updates", Action.Enable, null),
+            HistoryEntry(1, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, now - 4 * 60_000),
+        )
+        val files = listOf(
+            TvFile("subtitles.srt", 61_000, now - 40 * 60_000L),
+            TvFile("kodi-21.1-armeabi-v7a.apk", 74_000_000, now - 5 * 3_600_000L),
+            TvFile("holiday-2025.mp4", 812_000_000, now - 3 * 86_400_000L),
+        )
+        val tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null)
+        return deviceState { copy(history = history, files = FilesUi(TvFolder.DOWNLOAD, files), tweaks = tweaks) }
+    }
+
+    private fun tabShots(tab: TvTab, name: String) {
+        shot(name) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = tab) }
+    }
+
+    @Test fun tabs_overview() = tabShots(TvTab.Overview, "40_tabs_overview")
+    @Test fun tabs_apps() = tabShots(TvTab.Apps, "41_tabs_apps")
+    @Test fun tabs_files() = tabShots(TvTab.Files, "42_tabs_files")
+    @Test fun tabs_tweaks() = tabShots(TvTab.Tweaks, "43_tabs_tweaks")
+    @Test fun tabs_overview_dark() = shot("40_tabs_overview", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Overview) }
+    @Test fun tabs_apps_dark() = shot("41_tabs_apps", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Apps) }
+    @Test fun tabs_files_dark() = shot("42_tabs_files", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Files) }
+    @Test fun tabs_tweaks_dark() = shot("43_tabs_tweaks", dark = true) { DeviceTabsScreen(tabsState(), DeviceActions(), startTab = TvTab.Tweaks) }
+
+    @Test fun tabs_tvMenu() {
+        val open = {
+            compose.onNodeWithContentDescription("Switch TV").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithText("Add a TV").assertExists()
+            Unit
+        }
+        shot("44_tabs_tv_menu", screen = true, before = open) { DeviceTabsScreen(tabsState().copy(showOffline = true), DeviceActions()) }
+    }
+
+    @Test fun tabs_appMenu() {
+        val open = {
+            compose.onNodeWithContentDescription("More options").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithText("About & licences").assertExists()
+            Unit
+        }
+        shot("45_tabs_app_menu", screen = true, before = open) { DeviceTabsScreen(tabsState(), DeviceActions()) }
+    }
+
     @Test fun device_overview() {
-        shot("04_device") { DeviceScreen(deviceState(), DeviceActions()) }
+        shot("04_device") { DeviceTabsScreen(deviceState(), DeviceActions()) }
         // Plain words on the main page: no Details expander, no MB per app; numbers live on Advanced.
         compose.onNodeWithText("Details").assertDoesNotExist()
-        compose.onNodeWithText("Advanced").assertExists()
+        compose.onNodeWithContentDescription("More options").assertExists() // Advanced is in there now
         compose.onNodeWithText("Running · ", substring = true).assertDoesNotExist()
         // The three main actions sit under the system widget, Debloat among them.
         for (t in listOf("Install app", "Debloat", "Send file")) compose.onNodeWithText(t).assertIsEnabled()
         for (t in listOf("Up for", "Last software update", "Internal storage", "Network")) compose.onNodeWithText(t).assertExists()
     }
 
-    @Test fun device_overview_dark() = shot("04_device", dark = true) { DeviceScreen(deviceState(), DeviceActions()) }
-
-    @Test fun device_picker() = shot("04_device_picker", screen = true, before = {
-        compose.onNodeWithContentDescription("Switch TV").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithText("Add a TV").assertExists()
-        Unit
-    }) { DeviceScreen(deviceState().copy(showOffline = true), DeviceActions()) }
+    @Test fun device_overview_dark() = shot("04_device", dark = true) { DeviceTabsScreen(deviceState(), DeviceActions()) }
 
     @Config(qualifiers = "w411dp-h1500dp-xxhdpi")
     @Test fun device_confirmDisable() {
         val state = deviceState { copy(pending = "com.xgimi.assistant" to Action.Disable) }
-        shot("05_device_confirm_disable") { DeviceScreen(state, DeviceActions()) }
+        shot("05_device_confirm_disable") { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
     }
 
     @Test fun device_offline() {
@@ -217,7 +260,7 @@ class ScreenshotTest {
         // The last stats this phone saw, 14 minutes before it went away.
         val last = fake.snapshot(off.id).copy(at = now - 14 * 60_000)
         shot("06_device_offline") {
-            DeviceScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
+            DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
         }
         // Old numbers don't speak for a TV that's away; what it is still does.
         compose.onNodeWithText("Up for").assertDoesNotExist()
@@ -227,7 +270,7 @@ class ScreenshotTest {
 
     @Test fun device_storageFull() {
         val state = deviceState { copy(snapshot = snapshot?.copy(storageUsedGb = 29.1, storageTotalGb = 32.0)) }
-        shot("13_device_storage_full") { DeviceScreen(state, DeviceActions()) }
+        shot("13_device_storage_full") { DeviceTabsScreen(state, DeviceActions()) }
     }
 
     // Tall enough that History is composed without scrolling: the lazy list never lays it out otherwise.
@@ -237,12 +280,7 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 40_000, Action.Disable, "com.xgimi.ota", "XGIMI Updates", Action.Enable, null),
             HistoryEntry(1, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, now - 4 * 60_000),
         )
-        val openHistory = {
-            compose.onNodeWithText("Apps").performClick() // fold the long list away
-            compose.onNodeWithText("History").performClick()
-            Unit
-        }
-        shot("07_device_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+        shot("07_device_history") { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
     }
 
     @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
@@ -250,15 +288,12 @@ class ScreenshotTest {
         val turnedOn = HistoryEntry(3, xgimi.ip, now - 20_000, Action.Enable, "com.xgimi.assistant", "XGIMI Assistant", Action.Disable, null)
         val undone = mutableListOf<HistoryEntry>()
         val openAndTap = {
-            compose.onNodeWithText("Apps").performClick()
-            compose.onNodeWithText("History").performClick()
-            compose.mainClock.advanceTimeBy(1_000)
             // The button says what it does, and a tap only asks.
             compose.onNodeWithText("Disable").performClick()
             Unit
         }
         shot("16_history_undo_disable", screen = true, before = openAndTap) {
-            DeviceScreen(deviceState { copy(history = listOf(turnedOn)) }, DeviceActions(undo = { undone += it }))
+            DeviceTabsScreen(deviceState { copy(history = listOf(turnedOn)) }, DeviceActions(undo = { undone += it }), startTab = TvTab.Tweaks)
         }
         compose.onNodeWithText("Disable XGIMI Assistant?").assertExists()
         assertEquals(emptyList<HistoryEntry>(), undone)
@@ -275,7 +310,7 @@ class ScreenshotTest {
             compose.mainClock.advanceTimeBy(1_000)
         }
         shot("26_apps_uninstall_offered", screen = true, before = { tap("Netflix"); tap("XGIMI Assistant"); Unit }) {
-            DeviceScreen(deviceState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }))
+            DeviceTabsScreen(deviceState(), DeviceActions(propose = { pkg, a -> proposed += pkg to a }), startTab = TvTab.Apps)
         }
         // Netflix was installed by the user; XGIMI Assistant came with the TV and only gets Disable.
         compose.onAllNodesWithText("Uninstall").assertCountEquals(1)
@@ -285,7 +320,7 @@ class ScreenshotTest {
 
     @Test fun apps_uninstallAsksInADialog() {
         val state = deviceState { copy(pending = "com.netflix.ninja" to Action.Uninstall) }
-        shot("27_apps_uninstall_confirm", screen = true) { DeviceScreen(state, DeviceActions()) }
+        shot("27_apps_uninstall_confirm", screen = true) { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("Uninstall Netflix?").assertExists()
         compose.onNodeWithText("can't be undone", substring = true).assertExists()
         compose.onNodeWithText("Yes, uninstall it").assertExists()
@@ -293,10 +328,10 @@ class ScreenshotTest {
 
     @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun apps_protectedAreFoldedAway() {
-        shot("28_apps_protected_folded", screen = true) { DeviceScreen(deviceState(), DeviceActions()) }
-        compose.onNodeWithText("Can't be changed").assertExists()
+        shot("28_apps_protected_folded", screen = true) { DeviceTabsScreen(deviceState(), DeviceActions(), startTab = TvTab.Apps) }
+        compose.onNodeWithText("Changeable", substring = true).assertIsSelected()
         compose.onNodeWithText("System UI").assertDoesNotExist()
-        compose.onNodeWithText("Can't be changed").performClick()
+        compose.onNodeWithText("Can't be changed", substring = true).performClick()
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("System UI").assertExists()
     }
@@ -388,13 +423,13 @@ class ScreenshotTest {
     @Test fun apps_helperNames() {
         val labels = listOf("YouTube", "Netflix", "Jellyfin", "Weather Box", "XGIMI Assistant")
         val apps = tvApps.zip(labels) { (pkg, color), label -> app(pkg, label, iconPng(color)) }
-        shot("09_apps_helper_names") { DeviceScreen(appsState(apps), DeviceActions()) }
+        shot("09_apps_helper_names") { DeviceTabsScreen(appsState(apps), DeviceActions(), startTab = TvTab.Apps) }
     }
 
     @Test fun apps_fallbackNames() {
         // The helper was refused: bundled names where known, a humanised id otherwise, letter avatars.
         val apps = tvApps.map { (pkg, _) -> app(pkg, AppNames.fallback(pkg), null) }
-        shot("10_apps_fallback_names") { DeviceScreen(appsState(apps), DeviceActions()) }
+        shot("10_apps_fallback_names") { DeviceTabsScreen(appsState(apps), DeviceActions(), startTab = TvTab.Apps) }
     }
 
     /** The Files section's body on its own: the section is collapsed on the full page. */
@@ -422,16 +457,12 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 60_000, Action.Change, "ANIMATIONS", "Animations at 0.5×", Action.Change, null, mapOf("window_animation_scale" to null)),
             HistoryEntry(1, xgimi.ip, now - 90_000, Action.Change, "PRIVATE_DNS", "Private DNS set to ${TvSettings.ADGUARD}", Action.Change, null, mapOf("private_dns_mode" to "opportunistic")),
         )
-        shot("16_device_tweaks_history", before = {
-            compose.onNodeWithText("Apps").performClick()
-            compose.onNodeWithText("History").performClick()
-            Unit
-        }) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+        shot("16_device_tweaks_history") { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
     }
 
     @Test fun device_connectionRequest() = shot("17_device_request", screen = true) {
         val request = ConnectionRequest("AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89")
-        DeviceScreen(deviceState { copy(request = request) }, DeviceActions())
+        DeviceTabsScreen(deviceState { copy(request = request) }, DeviceActions())
     }
 
     private val dir = Files.createTempDirectory("shots").toFile()
@@ -444,7 +475,7 @@ class ScreenshotTest {
     )
 
     private fun sideload(name: String, s: SideloadUi, dark: Boolean = false) =
-        shot(name, dark, screen = true) { DeviceScreen(deviceState { copy(sideload = s) }, DeviceActions()) }
+        shot(name, dark, screen = true) { DeviceTabsScreen(deviceState { copy(sideload = s) }, DeviceActions()) }
 
     @Test fun sideload_new() = sideload("10_sideload_new", SideloadUi(SideloadUi.Step.Ready, split, null))
 
@@ -472,7 +503,7 @@ class ScreenshotTest {
 
     @Test fun transfer() = shot("15_transfer", screen = true) {
         val t = TransferUi("holiday-2025.mp4", toTv = false, folder = TvFolder.DOWNLOAD, progress = Progress(301_000_000, 812_000_000))
-        DeviceScreen(deviceState { copy(transfer = t) }, DeviceActions())
+        DeviceTabsScreen(deviceState { copy(transfer = t) }, DeviceActions())
     }
 
     @Test fun permission() = shot("08_permission") { PermissionScreen(denied = false, canAsk = true, {}, {}) }
@@ -494,7 +525,7 @@ class ScreenshotTest {
         val base = deviceState()
         val off = base.devices.last().copy(state = DeviceState.NotAllowed)
         shot("12_device_not_allowed") {
-            DeviceScreen(base.copy(devices = base.devices.dropLast(1) + off, selectedId = off.id, device = DeviceUi()), DeviceActions())
+            DeviceTabsScreen(base.copy(devices = base.devices.dropLast(1) + off, selectedId = off.id, device = DeviceUi()), DeviceActions())
         }
     }
 
@@ -511,7 +542,7 @@ class ScreenshotTest {
 
     @Test fun device_restarting() {
         val state = deviceState().let { it.copy(restarting = mapOf(it.selectedId!! to Restart(now - 200_000, down = true))) }
-        shot("14_device_restarting") { DeviceScreen(state, DeviceActions()) }
+        shot("14_device_restarting") { DeviceTabsScreen(state, DeviceActions()) }
     }
 
     @Test fun reboot() = shot("15_reboot", screen = true) { RebootDialog({}, {}) }
@@ -650,12 +681,7 @@ class ScreenshotTest {
             HistoryEntry(2, xgimi.ip, now - 5 * 60_000, Action.Stop, "com.netflix.ninja", "Netflix", Action.Open, null),
             HistoryEntry(1, xgimi.ip, now - 2 * 3_600_000, Action.Stop, "com.google.android.youtube.tv", "YouTube", Action.Open, now - 3_500_000),
         )
-        val openHistory = {
-            compose.onNodeWithText("Apps").performClick() // fold the long list away
-            compose.onNodeWithText("History").performClick()
-            Unit
-        }
-        shot("22_readme_history", before = openHistory) { DeviceScreen(deviceState { copy(history = history) }, DeviceActions()) }
+        shot("22_readme_history") { DeviceTabsScreen(deviceState { copy(history = history) }, DeviceActions(), startTab = TvTab.Tweaks) }
         compose.onNodeWithText("Restore everything (2)").assertExists()
     }
     @Test fun readme_install() {
@@ -678,25 +704,15 @@ class ScreenshotTest {
             TvFile("holiday-2025.mp4", 812_000_000, now - 3 * 86_400_000L),
             TvFile("wallpaper-mountains.jpg", 2_400_000, now - 9 * 86_400_000L),
         )
-        val openFiles = {
-            compose.onNodeWithText("Apps").performClick() // fold the long list away
-            compose.onNodeWithText("Files on the TV").performClick()
-            Unit
-        }
-        shot("24_readme_files", before = openFiles) { DeviceScreen(deviceState { copy(files = FilesUi(TvFolder.DOWNLOAD, files)) }, DeviceActions()) }
+        shot("24_readme_files") { DeviceTabsScreen(deviceState { copy(files = FilesUi(TvFolder.DOWNLOAD, files)) }, DeviceActions(), startTab = TvTab.Files) }
         compose.onNodeWithText("wallpaper-mountains.jpg").assertExists()
     }
 
     // Tall, like readme_history: frame.py scrolls it down to TV tweaks.
     @Config(qualifiers = "w411dp-h2600dp-xxhdpi")
     @Test fun readme_tweaks() {
-        val openTweaks = {
-            compose.onNodeWithText("Apps").performClick() // fold the long list away
-            compose.onNodeWithText(Copy.TWEAKS).performClick()
-            Unit
-        }
         val tweaks = TvTweaks(dnsHost = TvSettings.ADGUARD, animationScale = null)
-        shot("29_readme_tweaks", before = openTweaks) { DeviceScreen(deviceState { copy(tweaks = tweaks) }, DeviceActions()) }
+        shot("29_readme_tweaks") { DeviceTabsScreen(deviceState { copy(tweaks = tweaks) }, DeviceActions(), startTab = TvTab.Tweaks) }
         compose.onNodeWithText(Copy.dnsState(TvSettings.ADGUARD)).assertExists()
     }
 
@@ -709,13 +725,12 @@ class ScreenshotTest {
             val projectivy = { a: AppInfo -> a.copy(protectedReason = null, system = false, removable = true, homeInstead = stock.packageName) }
             copy(apps = listOf(stock) + apps.map { if (it.packageName == "com.spocky.projengmenu") projectivy(it) else it }, pending = "com.spocky.projengmenu" to Action.Home)
         }
-        val foldSuggested = { compose.onNodeWithText("Suggested for this TV").performClick(); Unit }
-        shot("30_readme_home", before = foldSuggested) { DeviceScreen(state, DeviceActions()) }
+        shot("30_readme_home") { DeviceTabsScreen(state, DeviceActions(), startTab = TvTab.Apps) }
         compose.onNodeWithText("Yes, switch home screen").assertExists()
     }
 
     @Test fun readme_send() = shot("25_readme_send", screen = true) {
         val t = TransferUi("family-trip-2025.mp4", toTv = true, folder = TvFolder.MOVIES, progress = Progress(486_000_000, 812_000_000))
-        DeviceScreen(deviceState { copy(transfer = t) }, DeviceActions())
+        DeviceTabsScreen(deviceState { copy(transfer = t) }, DeviceActions())
     }
 }

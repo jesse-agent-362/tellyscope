@@ -4,65 +4,40 @@ package app.tellyscope.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,7 +48,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,8 +63,6 @@ import app.tellyscope.data.HistoryBook
 import app.tellyscope.data.HistoryEntry
 import app.tellyscope.data.Proc
 import app.tellyscope.data.Snapshot
-import app.tellyscope.data.Suggestions
-import app.tellyscope.data.deviceKind
 import app.tellyscope.ui.theme.SmallNumber
 
 data class DeviceActions(
@@ -139,148 +111,12 @@ data class DeviceActions(
 /** Off while the remote is made faster: the device page hides its Remote button. */
 internal const val REMOTE_ENABLED = false
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DeviceScreen(
-    state: UiState,
-    actions: DeviceActions,
-    snackbar: SnackbarHostState = remember { SnackbarHostState() },
-) {
-    val device = state.selected ?: return
-    val ui = state.device
-    var searching by rememberSaveable { mutableStateOf(false) }
-    val q = state.query.trim().lowercase()
-    val offline = device.state != DeviceState.Online
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            if (searching) {
-                TopAppBar(
-                    title = {
-                        TextField(
-                            value = state.query,
-                            onValueChange = actions.query,
-                            placeholder = { Text("Search apps") },
-                            singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    },
-                    actions = {
-                        IconButton(onClick = { searching = false; actions.query("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close search")
-                        }
-                    },
-                )
-            } else {
-                TopAppBar(
-                    title = { Text("Your TV", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    actions = {
-                        if (REMOTE_ENABLED) TextButton(onClick = actions.remote, enabled = !offline) { Text("Remote") }
-                        TextButton(onClick = actions.advanced) { Text("Advanced") }
-                        IconButton(onClick = { searching = true }, enabled = !offline) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                    },
-                )
-            }
-        },
-    ) { pad ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(pad),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val snap = ui.snapshot
-            // A reading from before the TV went away is stale: it doesn't speak for the TV now.
-            val live = snap?.takeIf { !offline }
-            item { TvCard(state, live, actions) }
-            val restart = state.restarting[device.id]
-            if (restart != null) {
-                item { RestartingCard(restart, state.now) }
-            } else if (device.state == DeviceState.NotAllowed) {
-                item { NotAllowedCard(actions.reconnect) }
-            } else if (offline) {
-                item { OfflineCard(device, state.now, actions.reconnect) }
-            }
-            if (live != null) {
-                item { SystemWidget(live) }
-            } else if (offline && snap == null) {
-                item {
-                    Text(
-                        Copy.noStats(device.state),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (!offline && q.isEmpty()) {
-                item {
-                    ActionTiles(
-                        actions,
-                        canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready,
-                        disabling = ui.busy == DISABLING,
-                    )
-                }
-                val count = (ui.lists as? Suggestions.Ready)?.groups?.sumOf { it.packages.size } ?: 0
-                section("lists", "Suggested for this TV", count, expandedByDefault = true) {
-                    SuggestionsSummary(ui.lists)
-                }
-            }
-            // An offline TV can't list anything: sections with nothing in them stay out of the way.
-            // Protected apps can't be changed, so they wait in their own folded section below.
-            val (locked, changeable) = ui.apps
-                .filter { q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.contains(q) }
-                .sortedWith(compareBy({ !it.enabled }, { it.system }, { it.label }))
-                .partition { it.protectedReason != null }
-            if (!offline || ui.apps.isNotEmpty()) section(
-                key = "apps",
-                title = "Apps",
-                count = ui.apps.count { it.protectedReason == null },
-                expandedByDefault = true,
-                forceOpen = q.isNotEmpty(),
-            ) {
-                if (changeable.isEmpty()) EmptyLine(q)
-                changeable.forEach { app ->
-                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions, homeLabel(ui.apps, app))
-                }
-            }
-            if (ui.apps.any { it.protectedReason != null } && (q.isEmpty() || locked.isNotEmpty())) section(
-                key = "protected",
-                title = Copy.CANT_CHANGE,
-                count = ui.apps.count { it.protectedReason != null },
-                forceOpen = q.isNotEmpty(),
-            ) {
-                locked.forEach { app ->
-                    AppRow(app, snap?.procs.orEmpty(), ui.pending, ui.busy == app.packageName, actions, homeLabel(ui.apps, app))
-                }
-            }
-            if (!offline && q.isEmpty()) section("files", "Files on the TV", ui.files.list?.size ?: 0) {
-                FilesBlock(ui.files, state.now, actions)
-            }
-            if (!offline && q.isEmpty()) section("tweaks", Copy.TWEAKS, 0) {
-                TweaksBlock(ui, actions)
-            }
-            section("history", "History", ui.history.size) {
-                HistoryList(ui.history, state.now, actions.undo, restoring = ui.busy == RESTORING, onRestoreAll = actions.restoreAll)
-            }
-        }
-        if (!offline) ui.request?.let { RequestDialog(it, ui.busy == ANSWERING, actions.answerRequest, actions.dismissRequest) }
-        ui.sideload?.let { SideloadDialog(it, actions) }
-        ui.transfer?.let { TransferDialog(it, actions.cancelTransfer) }
-    }
-}
-
 /**
- * The TV at a glance, with room to breathe: which TV (tap to switch), how it's doing, and the
+ * The TV at a glance, with room to breathe: how it's doing, and the
  * few facts people look up. Everything else is on Advanced.
  */
 @Composable
-private fun TvCard(state: UiState, live: Snapshot?, actions: DeviceActions) {
+internal fun TvCard(state: UiState, live: Snapshot?) {
     val device = state.selected ?: return
     val facts = listOfNotNull(
         "IP address" to device.hit.ip,
@@ -295,7 +131,6 @@ private fun TvCard(state: UiState, live: Snapshot?, actions: DeviceActions) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            DevicePicker(state, actions)
             if (live != null) {
                 HealthLine(Copy.health(live, heaviest(live, state.device.apps)))
             } else {
@@ -330,7 +165,7 @@ private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
  * install fits, then CPU, RAM, temperature and network speed as plain numbers.
  */
 @Composable
-private fun SystemWidget(s: Snapshot) {
+internal fun SystemWidget(s: Snapshot) {
     val dash = "\u2014"
     Card(
         Modifier.fillMaxWidth(),
@@ -370,99 +205,6 @@ private fun Vital(label: String, value: String, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun DevicePicker(state: UiState, actions: DeviceActions) {
-    var open by remember { mutableStateOf(false) }
-    var forgetting by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
-    var about by remember { mutableStateOf(false) }
-    val device = state.selected ?: return
-    if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
-    if (renaming) RenameDialog(device.nickname.orEmpty(), networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
-    if (about) AboutDialog(
-        when (val l = state.device.lists) {
-            is Suggestions.Pick -> l.commit
-            is Suggestions.Ready -> l.commit
-            else -> null
-        },
-        onDismiss = { about = false },
-    )
-    val offlineCount = state.devices.count { it.state != DeviceState.Online }
-    Box {
-        Row(
-            Modifier.clip(MaterialTheme.shapes.large).clickable { open = true }.padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            KindBadge(device)
-            Column(Modifier.weight(1f, fill = false)) {
-                Text(name(device), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val made = made(device.manufacturer ?: device.hit.maker, device.model)
-                if (made.isNotEmpty()) {
-                    Text(made, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch TV")
-        }
-        DropdownMenu(open, onDismissRequest = { open = false }) {
-            state.devices
-                .filter { state.showOffline || it.state == DeviceState.Online || it.id == state.selectedId }
-                .forEach { d ->
-                    DropdownMenuItem(
-                        // Name over state, like the top bar: a long name gets the full width.
-                        text = {
-                            Column {
-                                Text(name(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    StateDot(d.state)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        if (d.state == DeviceState.Online) Copy.state(d.state)
-                                        else d.lastSeen?.let { "${Copy.state(d.state)}, seen ${Copy.ago(it, state.now)}" } ?: Copy.state(d.state),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        },
-                        leadingIcon = { Icon(DeviceIcons.of(deviceKind(d)), contentDescription = deviceKind(d).word()) },
-                        onClick = { open = false; actions.select(d.id) },
-                    )
-                }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Show offline ($offlineCount)") },
-                leadingIcon = { Checkbox(state.showOffline, onCheckedChange = null) },
-                onClick = { actions.showOffline(!state.showOffline) },
-            )
-            DropdownMenuItem(
-                text = { Text("Add a TV") },
-                leadingIcon = { Icon(Icons.Default.Add, null) },
-                onClick = { open = false; actions.addDevice() },
-            )
-            DropdownMenuItem(
-                text = { Text("Rename this TV") },
-                leadingIcon = { Icon(Icons.Default.Edit, null) },
-                onClick = { open = false; renaming = true },
-            )
-            DropdownMenuItem(
-                text = { Text("Forget this TV") },
-                leadingIcon = { Icon(Icons.Default.Delete, null) },
-                onClick = { open = false; forgetting = true },
-            )
-            DropdownMenuItem(
-                text = { Text("Settings") },
-                leadingIcon = { Icon(Icons.Default.Settings, null) },
-                onClick = { open = false; actions.settings() },
-            )
-            DropdownMenuItem(
-                text = { Text("About & licences") },
-                leadingIcon = { Icon(Icons.Default.Info, null) },
-                onClick = { open = false; about = true },
-            )
-        }
-    }
-}
-
 /** Undoing a Turn on disables the app; it names the app and asks like any other Disable. */
 @Composable
 fun UndoDisableDialog(entry: HistoryEntry, onDisable: () -> Unit, onDismiss: () -> Unit) {
@@ -493,18 +235,19 @@ fun RestoreDialog(count: Int, onRestore: () -> Unit, onDismiss: () -> Unit) {
 }
 
 /** "XGIMI · Horizon Pro": many models already start with the maker's name, so it isn't said twice. */
-private fun made(maker: String?, model: String?): String {
+internal fun made(maker: String?, model: String?): String {
     val m = if (maker != null && model != null && model.startsWith(maker, ignoreCase = true)) model.drop(maker.length).trim() else model
     return listOfNotNull(maker, m?.takeIf { it.isNotEmpty() }).joinToString(" · ")
 }
 
-private fun name(d: Device) = d.nickname ?: networkName(d)
+/** The name the user gave the TV, else its model: a network id like "xgimi-projector" means little. */
+internal fun name(d: Device) = d.nickname ?: d.model ?: networkName(d)
 
-private fun networkName(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
+internal fun networkName(d: Device) = d.hit.hostname ?: d.model ?: d.hit.ip
 
-/** Stored on this phone only, per TV; an empty name goes back to what the network calls it. */
+/** Stored on this phone only, per TV; an empty name goes back to [fallback], the model or network name. */
 @Composable
-fun RenameDialog(current: String, networkName: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+fun RenameDialog(current: String, fallback: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by rememberSaveable { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -516,26 +259,13 @@ fun RenameDialog(current: String, networkName: String, onSave: (String) -> Unit,
                     value = text,
                     onValueChange = { text = it.take(app.tellyscope.data.NameBook.MAX_LENGTH) },
                     singleLine = true,
-                    placeholder = { Text(networkName) },
+                    placeholder = { Text(fallback) },
                 )
             }
         },
         confirmButton = { Button(onClick = { onSave(text) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-/** What kind of device it is, on a tile: TV, projector or streaming stick. Generic shapes, never a maker's logo. */
-@Composable
-private fun KindBadge(d: Device) {
-    val kind = deviceKind(d)
-    Box(
-        Modifier.padding(end = 14.dp).size(56.dp).clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(DeviceIcons.of(kind), contentDescription = kind.word(), Modifier.size(30.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-    }
 }
 
 /** Forgetting only touches this phone; the TV keeps its own list of allowed computers. */
@@ -551,7 +281,7 @@ fun ForgetDialog(name: String, onForget: () -> Unit, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun StateDot(state: DeviceState) {
+internal fun StateDot(state: DeviceState) {
     val c = when (state) {
         DeviceState.Online -> MaterialTheme.colorScheme.primary
         DeviceState.Waiting, DeviceState.Found, DeviceState.NeedsPairing -> MaterialTheme.colorScheme.tertiary
@@ -563,7 +293,7 @@ private fun StateDot(state: DeviceState) {
 
 /** The TV refused (revoked access, a reset, or Deny); retrying stopped so the prompt doesn't nag. */
 @Composable
-private fun NotAllowedCard(onConnect: () -> Unit) {
+internal fun NotAllowedCard(onConnect: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -595,7 +325,7 @@ private fun CardTitle(icon: androidx.compose.ui.graphics.vector.ImageVector, tex
 }
 
 @Composable
-private fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
+internal fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
     // Material 3 has no warning role; tertiary is the standard stand-in, kept apart from error.
     Card(
         colors = CardDefaults.cardColors(
@@ -618,7 +348,7 @@ private fun OfflineCard(device: Device, now: Long, onReconnect: () -> Unit) {
 }
 
 /** App names by memory use, largest first, for the health line. */
-private fun heaviest(snap: Snapshot, apps: List<AppInfo>): List<String> {
+internal fun heaviest(snap: Snapshot, apps: List<AppInfo>): List<String> {
     val labels = apps.associate { it.packageName to it.label }
     return snap.procs.filter { it.packageName != null }
         .groupBy { labels[it.packageName] ?: AppNames.fallback(it.packageName!!) }
@@ -637,41 +367,6 @@ private fun HealthLine(h: Copy.Health) {
         )
         Spacer(Modifier.width(8.dp))
         Text(h.text, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-/** A collapsible card section. */
-private fun LazyListScope.section(
-    key: String,
-    title: String,
-    count: Int,
-    expandedByDefault: Boolean = false,
-    forceOpen: Boolean = false,
-    body: @Composable () -> Unit,
-) {
-    item(key = key) {
-        var open by rememberSaveable { mutableStateOf(expandedByDefault) }
-        val shown = open || forceOpen
-        val turn by animateFloatAsState(if (shown) 180f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "chevron")
-        Card(
-            Modifier.fillMaxWidth().animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
-            Row(
-                Modifier.fillMaxWidth().clickable { open = !open }.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (count > 0) Text("$count", style = SmallNumber, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(8.dp))
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = if (shown) "Collapse" else "Expand", Modifier.rotate(turn))
-            }
-            AnimatedVisibility(shown) {
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    body()
-                }
-            }
-        }
     }
 }
 
@@ -702,7 +397,7 @@ fun AppIcon(app: AppInfo, modifier: Modifier = Modifier) {
 }
 
 /** The name of the home screen [app] would replace, or null when it isn't offered as one. */
-private fun homeLabel(apps: List<AppInfo>, app: AppInfo): String? =
+internal fun homeLabel(apps: List<AppInfo>, app: AppInfo): String? =
     app.homeInstead?.let { pkg -> apps.firstOrNull { it.packageName == pkg }?.label }
 
 /** Uninstall has no undo, so it asks in a dialog that names the app, not inline. */
@@ -724,7 +419,7 @@ fun UninstallDialog(app: AppInfo, onUninstall: () -> Unit, onDismiss: () -> Unit
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun AppRow(
+internal fun AppRow(
     app: AppInfo,
     procs: List<Proc>,
     pending: Pair<String, Action>?,
@@ -792,7 +487,7 @@ private fun AppRow(
 }
 
 @Composable
-private fun HistoryList(
+internal fun HistoryList(
     history: List<HistoryEntry>,
     now: Long,
     onUndo: (HistoryEntry) -> Unit,
@@ -826,7 +521,16 @@ private fun HistoryList(
                 Text(Copy.ago(h.at, now), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             when {
-                h.undoneAt != null -> Text("Undone", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Same button as Undo, switched off: the row keeps its shape and reads as done.
+                h.undoneAt != null -> TextButton(
+                    onClick = {},
+                    enabled = false,
+                    colors = ButtonDefaults.textButtonColors(disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Undone")
+                }
                 h.undo != null -> TextButton(onClick = { if (h.undo == Action.Disable) disabling = h else onUndo(h) }) { Text(Copy.undo(h.undo)) }
             }
         }
