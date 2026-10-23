@@ -12,6 +12,8 @@ until this file has a section for its version.
 
 ## Unreleased
 
+- **Improved:** An offline TV keeps its maker and Android version after the app restarts. [#63](../../pull/63)
+
 ## 0.4.0 — 2026-10-24
 
 - **Improved:** Each TV's page has four tabs: Overview, Apps, Files and Tweaks. [#60](../../pull/60)

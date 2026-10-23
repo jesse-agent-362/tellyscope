@@ -49,6 +49,21 @@ data class Device(
     val nickname: String? = null,
     /** `ro.product.brand`, which can differ from [manufacturer]. */
     val brand: String? = null,
+    /** What the TV last reported, kept until Forget; as of [lastSeen]. Null before it ever answered. */
+    val lastKnown: LastKnown? = null,
+)
+
+/**
+ * The slow-changing facts from a TV's last good reading, saved on the phone so an offline TV
+ * (even after a restart) still shows them. Live numbers (CPU, RAM, temp, network) are never kept.
+ */
+data class LastKnown(
+    val manufacturer: String? = null,
+    val brand: String? = null,
+    val android: String? = null,
+    val softwareMonth: YearMonth? = null,
+    val storageUsedGb: Double? = null,
+    val storageTotalGb: Double? = null,
 )
 
 sealed interface ConnectResult {

@@ -29,6 +29,7 @@ import app.tellyscope.adb.Protected
 import app.tellyscope.adb.ProtectedReason
 import app.tellyscope.adb.Remote
 import app.tellyscope.adb.RemoteKey
+import app.tellyscope.adb.Stats
 import app.tellyscope.adb.PairResult
 import app.tellyscope.adb.pairOnFreshPort
 import app.tellyscope.adb.Tweak
@@ -109,6 +110,13 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         })
         links.put(host, link)?.disconnect()
         watchers.put(host, scope.launch {
+            // Save a fresh reading only when what's kept of it changed, not every 2 s.
+            launch {
+                link.stats.collect { st ->
+                    val kept = saved[host]?.lastKnown
+                    if (st != null && lastKnown(st, kept) != kept) remember(host)
+                }
+            }
             link.state.collect { st ->
                 if (st == AdbState.ONLINE) {
                     restoring -= host
@@ -125,6 +133,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
         val link = links[host] ?: return
         val hit = hits[host] ?: return
         val old = saved[host]
+        // Another TV on a saved address starts from nothing, not from the old one's facts.
+        val kept = old?.lastKnown?.takeIf { old.historyKey == null || old.historyKey == keys[host] }
         saved[host] = SavedDevice(
             host = host,
             port = link.port,
@@ -133,9 +143,25 @@ class AdbDeviceSource(context: Context) : DeviceSource {
             model = link.stats.value?.model ?: old?.model,
             lastSeen = link.lastSeenMillis ?: old?.lastSeen ?: System.currentTimeMillis(),
             historyKey = keys[host] ?: old?.historyKey,
+            lastKnown = link.stats.value?.let { lastKnown(it, kept) } ?: kept,
         )
         persist()
     }
+
+    /**
+     * What is kept of a reading; a fact this reading missed keeps its [old] value. Storage is
+     * rounded to 0.1 GB so a few KB written doesn't count as new.
+     */
+    private fun lastKnown(s: Stats, old: LastKnown?) = LastKnown(
+        manufacturer = s.manufacturer ?: old?.manufacturer,
+        brand = s.brand ?: old?.brand,
+        android = s.androidVersion ?: old?.android,
+        softwareMonth = s.softwareMonth ?: old?.softwareMonth,
+        storageUsedGb = s.storage?.let { tenths(it.usedKb) } ?: old?.storageUsedGb,
+        storageTotalGb = s.storage?.let { tenths(it.totalKb) } ?: old?.storageTotalGb,
+    )
+
+    private fun tenths(kb: Long) = Math.round(kb / 104_857.6) / 10.0
 
     /** Reads the map at write time, so whichever save runs last writes the newest list. */
     private fun persist() {
@@ -582,11 +608,12 @@ class AdbDeviceSource(context: Context) : DeviceSource {
                 AdbState.FOUND, null -> DeviceState.Found
             },
             model = stats?.model ?: saved[id]?.model,
-            manufacturer = stats?.manufacturer,
-            android = stats?.androidVersion,
+            manufacturer = stats?.manufacturer ?: saved[id]?.lastKnown?.manufacturer,
+            android = stats?.androidVersion ?: saved[id]?.lastKnown?.android,
             lastSeen = link?.lastSeenMillis ?: saved[id]?.lastSeen,
             nickname = names[keys[id] ?: id],
-            brand = stats?.brand,
+            brand = stats?.brand ?: saved[id]?.lastKnown?.brand,
+            lastKnown = saved[id]?.lastKnown,
         )
     }
 

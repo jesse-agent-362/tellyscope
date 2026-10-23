@@ -3,6 +3,7 @@
 package app.tellyscope.data
 
 import java.io.File
+import java.time.YearMonth
 
 /** What Tellyscope remembers about a TV between launches. */
 data class SavedDevice(
@@ -14,6 +15,8 @@ data class SavedDevice(
     val lastSeen: Long?,
     /** [historyKey] once the TV has answered; null before that. */
     val historyKey: String? = null,
+    /** Cleared only by Forget, which drops the whole line. */
+    val lastKnown: LastKnown? = null,
 )
 
 /**
@@ -42,12 +45,25 @@ class DeviceStore(private val file: File) {
     private fun format(d: SavedDevice) = listOf(
         VERSION, d.host, d.port.toString(), d.kind.name, clean(d.name), clean(d.model), d.lastSeen?.toString().orEmpty(),
         clean(d.historyKey),
+        clean(d.lastKnown?.manufacturer), clean(d.lastKnown?.brand), clean(d.lastKnown?.android),
+        d.lastKnown?.softwareMonth?.toString().orEmpty(),
+        d.lastKnown?.storageUsedGb?.toString().orEmpty(), d.lastKnown?.storageTotalGb?.toString().orEmpty(),
     ).joinToString("\t")
 
     private fun parse(line: String): SavedDevice? {
         val f = line.split('\t')
-        // 7 fields: written before the history key existed.
-        if (f.size !in 7..8 || f[0] != VERSION) return null
+        // 7 fields: written before the history key existed; 8 before the last-known facts.
+        if (f.size !in setOf(7, 8, 14) || f[0] != VERSION) return null
+        val lastKnown = if (f.size == 14 && f.subList(8, 14).any { it.isNotEmpty() }) {
+            LastKnown(
+                manufacturer = f[8].ifEmpty { null },
+                brand = f[9].ifEmpty { null },
+                android = f[10].ifEmpty { null },
+                softwareMonth = f[11].ifEmpty { null }?.let { runCatching { YearMonth.parse(it) }.getOrNull() ?: return null },
+                storageUsedGb = f[12].ifEmpty { null }?.let { it.toDoubleOrNull() ?: return null },
+                storageTotalGb = f[13].ifEmpty { null }?.let { it.toDoubleOrNull() ?: return null },
+            )
+        } else null
         return SavedDevice(
             host = f[1].ifEmpty { return null },
             port = f[2].toIntOrNull() ?: return null,
@@ -56,6 +72,7 @@ class DeviceStore(private val file: File) {
             model = f[5].ifEmpty { null },
             lastSeen = f[6].toLongOrNull(),
             historyKey = f.getOrNull(7)?.ifEmpty { null },
+            lastKnown = lastKnown,
         )
     }
 

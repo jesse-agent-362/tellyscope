@@ -104,6 +104,7 @@ class FakeDeviceSource(
                 manufacturer = "Amazon",
                 android = "9",
                 lastSeen = clock() - 14 * 60_000,
+                lastKnown = LastKnown("Amazon", "Amazon", "9", YearMonth.of(2024, 3), 5.1, 5.4),
             ),
         ).takeIf { scenario == Scenario.Normal }.orEmpty().forEach { put(it.id, it) }
     }

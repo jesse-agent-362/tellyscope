@@ -3,12 +3,14 @@
 package app.tellyscope
 
 import app.tellyscope.data.DeviceStore
+import app.tellyscope.data.LastKnown
 import app.tellyscope.data.SavedDevice
 import app.tellyscope.data.ScanKind
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.time.YearMonth
 
 class DeviceStoreTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -59,8 +61,33 @@ class DeviceStoreTest {
         val file = tmp.root.resolve("devices.tsv")
         DeviceStore(file).save(listOf(tv))
         // The older format had no eighth field at all.
-        file.writeText(file.readText().replace("\t\n", "\n"))
+        file.writeText(file.readText().replace("\t".repeat(7) + "\n", "\n"))
         assertEquals(7, file.readLines().single().split('\t').size)
         assertEquals(listOf(tv), DeviceStore(file).load())
+    }
+
+    @Test fun keepsTheLastKnownFacts() {
+        val file = tmp.root.resolve("devices.tsv")
+        val known = tv.copy(lastKnown = LastKnown("XGIMI", "XGIMI", "11", YearMonth.of(2023, 5), 9.4, 12.0))
+        DeviceStore(file).save(listOf(known, stick))
+        assertEquals(listOf(known, stick), DeviceStore(file).load())
+    }
+
+    @Test fun readsFilesFromBeforeTheLastKnownFacts() {
+        val file = tmp.root.resolve("devices.tsv")
+        val keyed = tv.copy(historyKey = "sn:XK03H1234")
+        DeviceStore(file).save(listOf(keyed))
+        // The older format stopped at the history key.
+        file.writeText(file.readText().replace("\t".repeat(6) + "\n", "\n"))
+        assertEquals(8, file.readLines().single().split('\t').size)
+        assertEquals(listOf(keyed), DeviceStore(file).load())
+    }
+
+    @Test fun aDamagedLastKnownFactCostsOnlyThatTv() {
+        val file = tmp.root.resolve("devices.tsv")
+        DeviceStore(file).save(listOf(stick))
+        file.appendText("v1\t192.168.1.88\t5555\tClassic\t\t\t\t\tXGIMI\t\t11\tMay 2023\t\t\n")
+        file.appendText("v1\t192.168.1.89\t5555\tClassic\t\t\t\t\tXGIMI\t\t11\t\tlots\t\n")
+        assertEquals(listOf(stick), DeviceStore(file).load())
     }
 }
