@@ -248,9 +248,14 @@ fun DeviceTabsScreen(
                     } else if (offline) {
                         item { OfflineCard(device, state.now, actions.reconnect) }
                     }
+                    // Away, storage is the last one seen, this session's or the saved one after a restart.
+                    val used = snap?.storageUsedGb ?: device.lastKnown?.storageUsedGb
+                    val total = snap?.storageTotalGb ?: device.lastKnown?.storageTotalGb
                     if (live != null) {
                         item { SystemWidget(live) }
-                    } else if (offline && snap == null) {
+                    } else if (offline && used != null && total != null) {
+                        item { SystemWidget(used, total, null, asOf = device.lastSeen?.let { Copy.ago(it, state.now) } ?: "the last visit") }
+                    } else if (offline) {
                         item { Muted(Copy.noStats(device.state)) }
                     }
                     val debloat = debloatState(ui)

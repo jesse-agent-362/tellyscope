@@ -244,6 +244,13 @@ class ScreenshotTest {
         compose.onNodeWithText("Kitchen").performClick()
         assertEquals(state.devices[2].id, picked)
     }
+    // After a restart there's no snapshot: the saved storage still shows, as of the last visit.
+    @Test fun offlineAfterRestartShowsSavedStorage() {
+        val state = md3State().let { it.copy(selectedId = it.devices[2].id, device = DeviceUi()) }
+        compose.setContent { TellyscopeTheme(dynamic = false) { DeviceTabsScreen(state, DeviceActions()) } }
+        compose.onNodeWithText("As of 2 h ago").assertExists()
+        compose.onNodeWithText("4.9 GB free").assertExists()
+    }
     @Test fun md3_oneTv() = md3("63_md3_one_tv", false) { md3State().let { it.copy(devices = it.devices.take(1)) } }
     @Test fun md3_oneTv_dark() = md3("63_md3_one_tv", true) { md3State().let { it.copy(devices = it.devices.take(1)) } }
 
@@ -322,9 +329,10 @@ class ScreenshotTest {
         shot("06_device_offline") {
             DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
         }
-        // Old numbers don't speak for a TV that's away; what it is still does.
-        compose.onNodeWithText("Up for").assertDoesNotExist()
-        compose.onNodeWithText("Internal storage").assertDoesNotExist()
+        // Away, storage shows as it was last seen; the live numbers are dashes.
+        compose.onNodeWithText("As of ", substring = true).assertExists()
+        compose.onNodeWithText("Internal storage").assertExists()
+        compose.onAllNodesWithText("\u2014").assertCountEquals(4)
         compose.onNodeWithText("Updated ", substring = true).assertExists()
     }
 

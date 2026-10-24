@@ -118,21 +118,31 @@ internal const val REMOTE_ENABLED = false
  * install fits, then CPU, RAM, temperature and network speed as plain numbers.
  */
 @Composable
-internal fun SystemWidget(s: Snapshot) {
+internal fun SystemWidget(s: Snapshot) = SystemWidget(s.storageUsedGb, s.storageTotalGb, s)
+
+/**
+ * The same card for a TV that's away: storage as it was [asOf] the last visit, and the live
+ * numbers as dashes, since old ones don't speak for a TV that isn't there.
+ */
+@Composable
+internal fun SystemWidget(usedGb: Double?, totalGb: Double?, live: Snapshot?, asOf: String? = null) {
     val dash = "\u2014"
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Column(Modifier.padding(16.dp)) {
-            val used = s.storageUsedGb
-            val total = s.storageTotalGb?.takeIf { it > 0 }
+            if (asOf != null) {
+                Text("As of $asOf", Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            val used = usedGb
+            val total = totalGb?.takeIf { it > 0 }
             if (used != null && total != null) {
                 Row {
                     Text("Internal storage", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${Copy.gbOf(used, total)} used", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Copy.free(s)?.let { Text(it, style = MaterialTheme.typography.titleLarge) }
+                Copy.free(used, total)?.let { Text(it, style = MaterialTheme.typography.titleLarge) }
                 val full = used / total
                 LinearProgressIndicator(
                     progress = { full.toFloat().coerceIn(0f, 1f) },
@@ -141,10 +151,10 @@ internal fun SystemWidget(s: Snapshot) {
                 )
             }
             Row {
-                Vital("CPU", "${s.cpuPercent}%", Modifier.weight(1f))
-                Vital("RAM", if (s.ramTotalMb > 0) "${s.ramUsedMb * 100 / s.ramTotalMb}%" else dash, Modifier.weight(1f))
-                Vital("Temp", s.tempC?.let { "$it\u00b0C" } ?: dash, Modifier.weight(1f))
-                Vital("Network", s.netBytesPerSec?.let(Copy::speed) ?: dash, Modifier.weight(1.3f))
+                Vital("CPU", live?.let { "${it.cpuPercent}%" } ?: dash, Modifier.weight(1f))
+                Vital("RAM", live?.takeIf { it.ramTotalMb > 0 }?.let { "${it.ramUsedMb * 100 / it.ramTotalMb}%" } ?: dash, Modifier.weight(1f))
+                Vital("Temp", live?.tempC?.let { "$it\u00b0C" } ?: dash, Modifier.weight(1f))
+                Vital("Network", live?.netBytesPerSec?.let(Copy::speed) ?: dash, Modifier.weight(1.3f))
             }
         }
     }

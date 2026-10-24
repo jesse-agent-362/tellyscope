@@ -167,8 +167,11 @@ object Copy {
         if (total < 10) "%.1f of %.1f GB".format(used, total) else "%.1f of %.0f GB".format(used, total)
 
     /** Free storage in plain words, rounded down so it never promises room that isn't there; null if unknown. */
-    fun free(s: Snapshot): String? {
-        val gb = s.storageUsedGb?.let { u -> s.storageTotalGb?.let { t -> (t - u).coerceAtLeast(0.0) } } ?: return null
+    fun free(s: Snapshot): String? = free(s.storageUsedGb, s.storageTotalGb)
+
+    /** [free] from the two numbers, for a TV's saved facts as well as a live reading. */
+    fun free(used: Double?, total: Double?): String? {
+        val gb = used?.let { u -> total?.let { t -> (t - u).coerceAtLeast(0.0) } } ?: return null
         return if (gb < 10) "%.1f GB free".format(Math.floor(gb * 10) / 10) else "${gb.toInt()} GB free"
     }
 
