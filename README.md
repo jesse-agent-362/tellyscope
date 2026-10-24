@@ -14,9 +14,9 @@ Debloat your Android TV, install apps, and browse and transfer files on it, all 
 
 Or get updates automatically with [Obtainium](#get-it).
 
-<img src="docs/screenshots/before-after.jpg" alt="A TV home screen before debloating, full of ads and suggestions, and after, showing only the user's apps" width="100%">
+<img src="docs/screenshots/clean-home.jpg" alt="A TV home screen after debloating: the inputs and the user's own apps, with no ads or suggestions" width="100%">
 
-<sub>Before and after on a Redmi TV, from [cleanyourtv](https://github.com/Gathin23/cleanyourtv), whose debloat lists Tellyscope uses. Their after also shows their own launcher.</sub>
+<sub>A TV after Tellyscope: only the inputs and your own apps.</sub>
 
 <table>
   <tr>
