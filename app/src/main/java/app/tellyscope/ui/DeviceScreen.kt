@@ -69,7 +69,6 @@ data class DeviceActions(
     val select: (String) -> Unit = {},
     val addDevice: () -> Unit = {},
     val settings: () -> Unit = {},
-    val showOffline: (Boolean) -> Unit = {},
     val query: (String) -> Unit = {},
     val propose: (String, Action) -> Unit = { _, _ -> },
     val confirm: () -> Unit = {},

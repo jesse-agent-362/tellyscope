@@ -222,7 +222,6 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 select = vm::select,
                 addDevice = { adding = true; vm.rescan() },
                 settings = { settings = true },
-                showOffline = vm::showOffline,
                 query = vm::query,
                 propose = vm::propose,
                 confirm = vm::confirm,

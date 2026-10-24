@@ -327,7 +327,7 @@ class ScreenshotTest {
         // The last stats this phone saw, 14 minutes before it went away.
         val last = fake.snapshot(off.id).copy(at = now - 14 * 60_000)
         shot("06_device_offline") {
-            DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last), showOffline = true), DeviceActions())
+            DeviceTabsScreen(base.copy(selectedId = off.id, device = DeviceUi(snapshot = last)), DeviceActions())
         }
         // Away, storage shows as it was last seen; the live numbers are dashes.
         compose.onNodeWithText("As of ", substring = true).assertExists()

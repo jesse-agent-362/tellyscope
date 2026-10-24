@@ -122,7 +122,6 @@ data class UiState(
     val scan: ScanUi = ScanUi(),
     val devices: List<Device> = emptyList(),
     val selectedId: String? = null,
-    val showOffline: Boolean = false,
     val device: DeviceUi = DeviceUi(),
     val query: String = "",
     val now: Long = System.currentTimeMillis(),
@@ -396,8 +395,6 @@ class TellyscopeViewModel(
             select((known.firstOrNull { it.state == DeviceState.Online } ?: known.firstOrNull())?.id)
         }
     }
-
-    fun showOffline(show: Boolean) = _state.update { it.copy(showOffline = show) }
 
     fun query(q: String) = _state.update { it.copy(query = q) }
 
