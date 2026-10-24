@@ -96,6 +96,8 @@ data class DeviceActions(
     val debloat: () -> Unit = {},
     /** Opens the Advanced screen: every number, per-app CPU and RAM, processes and network. */
     val advanced: () -> Unit = {},
+    /** Opens the TV's own system update screen. */
+    val checkUpdates: () -> Unit = {},
     /** Ad-blocking Private DNS through the given hostname; null goes back to Automatic. */
     val setDns: (String?) -> Unit = {},
     val setFastAnimations: (Boolean) -> Unit = {},
@@ -110,55 +112,6 @@ data class DeviceActions(
 
 /** Off while the remote is made faster: the device page hides its Remote button. */
 internal const val REMOTE_ENABLED = false
-
-/**
- * The TV at a glance, with room to breathe: how it's doing, and the
- * few facts people look up. Everything else is on Advanced.
- */
-@Composable
-internal fun TvCard(state: UiState, live: Snapshot?) {
-    val device = state.selected ?: return
-    val facts = listOfNotNull(
-        "IP address" to device.hit.ip,
-        live?.uptimeSeconds?.takeIf { it > 0 }?.let { "Up for" to Copy.upFor(it) },
-        device.android?.let { "Android" to it },
-        // Not live: the software doesn't change while the TV is away.
-        state.device.snapshot?.softwareMonth?.let { "Last software update" to Copy.month(it) },
-    )
-    Card(
-        Modifier.fillMaxWidth().padding(top = 4.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (live != null) {
-                HealthLine(Copy.health(live, heaviest(live, state.device.apps)))
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StateDot(device.state)
-                    Spacer(Modifier.width(8.dp))
-                    Text(Copy.state(device.state), style = MaterialTheme.typography.titleMedium)
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                facts.chunked(2).forEach { pair ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { (k, v) -> Fact(k, v, Modifier.weight(1f)) }
-                        if (pair.size == 1) Spacer(Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Fact(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
 
 /**
  * The TV's vitals in one small card: internal storage as a full bar, since it decides whether an
@@ -354,20 +307,6 @@ internal fun heaviest(snap: Snapshot, apps: List<AppInfo>): List<String> {
         .groupBy { labels[it.packageName] ?: AppNames.fallback(it.packageName!!) }
         .mapValues { (_, ps) -> ps.sumOf { it.ramMb } }
         .entries.sortedByDescending { it.value }.map { it.key }
-}
-
-@Composable
-private fun HealthLine(h: Copy.Health) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            if (h.ok) Icons.Default.CheckCircle else Icons.Default.Warning,
-            contentDescription = null,
-            Modifier.size(24.dp),
-            tint = if (h.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(h.text, style = MaterialTheme.typography.titleMedium)
-    }
 }
 
 @Composable

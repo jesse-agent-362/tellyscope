@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -60,13 +62,17 @@ private val Sticky = DialogProperties(dismissOnBackPress = false, dismissOnClick
 
 /**
  * The three things people come to a TV's page for, as big tiles under the system widget.
- * Debloat is the filled one: it's what most people open the app to do.
+ * Debloat is filled, with a count, while it has something to do; after that it looks like its
+ * neighbours and [onDebloat] leads somewhere quieter.
  */
 @Composable
-fun ActionTiles(actions: DeviceActions, canDebloat: Boolean, disabling: Boolean) {
+fun ActionTiles(actions: DeviceActions, count: Int, todo: Boolean, disabling: Boolean, onDebloat: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Tile(Icons.Default.Add, "Install app", actions.pickApp, Modifier.weight(1f))
-        Tile(Broom, if (disabling) "Disabling…" else "Debloat", actions.debloat, Modifier.weight(1f), enabled = canDebloat && !disabling, primary = true)
+        Tile(
+            Broom, if (disabling) "Disabling…" else "Debloat", onDebloat, Modifier.weight(1f),
+            enabled = !disabling, primary = todo, badge = count.takeIf { todo && it > 0 },
+        )
         // Where the file lands is the user's choice, every time, not whatever folder was last shown.
         var choosing by remember { mutableStateOf(false) }
         Box(Modifier.weight(1f)) {
@@ -92,6 +98,7 @@ private fun Tile(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
+    badge: Int? = null,
 ) {
     val c = MaterialTheme.colorScheme
     Surface(
@@ -116,14 +123,16 @@ private fun Tile(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(icon, contentDescription = null, Modifier.size(28.dp))
+            BadgedBox(badge = { if (badge != null) Badge { Text(badge.toString()) } }) {
+                Icon(icon, contentDescription = null, Modifier.size(28.dp))
+            }
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }
 
 /** Material Icons "cleaning_services" (Apache-2.0, see NOTICE); icons-core has no broom. */
-private val Broom = ImageVector.Builder("Broom", 24.dp, 24.dp, 24f, 24f)
+internal val Broom = ImageVector.Builder("Broom", 24.dp, 24.dp, 24f, 24f)
     .addPath(
         PathParser().parsePathString(
             "M16 11h-1V3c0-1.1-.9-2-2-2h-2c-1.1 0-2 .9-2 2v8H8c-2.76 0-5 2.24-5 5v7h18v-7c0-2.76-2.24-5-5-5z" +

@@ -29,6 +29,15 @@ class Remote(private val session: AdbSession) {
     /** False when the TV answered with an error. Throws if the link is gone. */
     suspend fun press(key: RemoteKey): Boolean = session.shell("input keyevent ${key.code}").exitCode == 0
 
+    /**
+     * Opens the TV's own system update screen. Some builds have none, and older `am` reports a
+     * missing screen in its output with exit code 0, so both are checked.
+     */
+    suspend fun openUpdates(): Boolean {
+        val r = session.shell("am start -a android.settings.SYSTEM_UPDATE_SETTINGS 2>&1")
+        return r.exitCode == 0 && !r.output.contains("Error")
+    }
+
     /** Types [text] into whatever box has focus on the TV. Check [typeable] first. */
     suspend fun type(text: String): Boolean = session.shell(typeCommand(text)).exitCode == 0
 

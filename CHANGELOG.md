@@ -12,6 +12,7 @@ until this file has a section for its version.
 
 ## Unreleased
 
+- **Improved:** Overview puts the TV first, with chips to switch and debloat counts. [#64](../../pull/64)
 - **Improved:** An offline TV keeps its maker and Android version after the app restarts. [#63](../../pull/63)
 
 ## 0.4.0 — 2026-10-24

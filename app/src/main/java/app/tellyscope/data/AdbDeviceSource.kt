@@ -495,6 +495,8 @@ class AdbDeviceSource(context: Context) : DeviceSource {
 
     override suspend fun reboot(deviceId: String) = Remote(session(deviceId)).reboot()
 
+    override suspend fun openUpdates(deviceId: String) = Remote(session(deviceId)).openUpdates()
+
     override suspend fun tweaks(deviceId: String): TvTweaks {
         val t = Tweaks(session(deviceId))
         return TvSettings.tweaks(t.read(Tweak.PRIVATE_DNS), t.read(Tweak.ANIMATIONS), sdk(deviceId))

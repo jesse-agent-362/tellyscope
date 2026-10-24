@@ -115,6 +115,9 @@ interface DeviceSource {
     /** Restarts the TV. The link drops and reconnects on its own once the TV is back. False if the TV refused. */
     suspend fun reboot(deviceId: String): Boolean
 
+    /** Opens the TV's system update screen on the TV. False when the TV has no such screen. */
+    suspend fun openUpdates(deviceId: String): Boolean
+
     /** Private DNS and animation speed as the TV has them now. */
     suspend fun tweaks(deviceId: String): TvTweaks
 

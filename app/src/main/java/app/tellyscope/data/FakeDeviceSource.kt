@@ -308,6 +308,11 @@ class FakeDeviceSource(
         return true
     }
 
+    override suspend fun openUpdates(deviceId: String): Boolean {
+        delay(300)
+        return true
+    }
+
     override suspend fun reboot(deviceId: String): Boolean {
         delay(300)
         remembered[deviceId]?.let { remembered[deviceId] = it.copy(state = DeviceState.Offline) }

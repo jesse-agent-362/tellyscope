@@ -244,6 +244,7 @@ fun TellyscopeApp(vm: TellyscopeViewModel) {
                 remote = { remote = true },
                 debloat = { debloat = true },
                 advanced = { advanced = true },
+                checkUpdates = vm::checkUpdates,
                 setDns = vm::setDns,
                 setFastAnimations = vm::setFastAnimations,
                 clearCaches = vm::clearCaches,

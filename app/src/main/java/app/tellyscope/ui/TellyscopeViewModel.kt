@@ -887,6 +887,22 @@ class TellyscopeViewModel(
         return null
     }
 
+    /** The TV shows its own update screen; Tellyscope can't see what it finds, so it only says where to look. */
+    fun checkUpdates() {
+        val id = _state.value.selectedId ?: return
+        viewModelScope.launch {
+            val ok = try {
+                source.openUpdates(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _notice.value = Copy.REMOTE_LOST
+                return@launch
+            }
+            _notice.value = if (ok) Copy.UPDATES_OPENED else Copy.NO_UPDATE_SCREEN
+        }
+    }
+
     fun reboot() {
         val id = _state.value.selectedId ?: return
         viewModelScope.launch {

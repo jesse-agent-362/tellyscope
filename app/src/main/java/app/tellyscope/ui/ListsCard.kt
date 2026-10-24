@@ -67,29 +67,6 @@ import app.tellyscope.data.listKind
 import app.tellyscope.data.listMakers
 import app.tellyscope.data.sourceName
 
-/** Body of the "Suggested for this TV" section: one line on what the list offers; the Debloat tile is the way in. */
-@Composable
-fun SuggestionsSummary(lists: Suggestions?) {
-    when (lists) {
-        null -> Muted("Looking up this TV's list…")
-        Suggestions.Unavailable -> Muted(
-            "Couldn't load the device lists. They download the first time you open a TV; check the phone's internet and open this TV again.",
-        )
-        is Suggestions.Pick -> {
-            Text("Tellyscope doesn't know this model yet. Tap Debloat to pick your TV and see what's usually safe to turn off.", style = MaterialTheme.typography.bodyMedium)
-        }
-        is Suggestions.Ready -> {
-            val n = lists.groups.sumOf { it.packages.size }
-            if (n == 0) {
-                Muted("Nothing on the list for ${lists.list.name} is still on here.")
-            } else {
-                Text("$n ${if (n == 1) "app" else "apps"} usually safe to turn off on this TV.", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-    if (lists is Suggestions.Pick || lists is Suggestions.Ready) Muted("Lists adapted from cleanyourtv (MIT).")
-}
-
 @Composable
 private fun Muted(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

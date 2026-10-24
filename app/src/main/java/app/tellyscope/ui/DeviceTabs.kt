@@ -1,9 +1,39 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Apps, Files and Tweaks icons are the Material Icons "apps", "folder" and "tune" (Apache-2.0), see NOTICE.
+// Apps, Files and Tweaks icons are the Material Icons "apps", "folder" and "tune", and Upload is
+// "upload" (Apache-2.0), see NOTICE.
 
 package app.tellyscope.ui
 
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Surface
+import androidx.compose.material3.LinearProgressIndicator
+import app.tellyscope.data.Device
+import app.tellyscope.data.Action
+import app.tellyscope.data.Snapshot
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,7 +99,11 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.tellyscope.data.DeviceState
 import app.tellyscope.data.Suggestions
@@ -103,8 +137,8 @@ private fun TvTab.icon() = when (this) {
 
 /**
  * The TV page as four tabs under a bottom bar, in place of one long scroll of folded sections.
- * The app bar is the same on every tab: the TV's name opens the TV menu, search jumps to Apps,
- * and the overflow holds the app-wide items.
+ * Overview leads with the TV itself, big and centred, and a chip per TV to switch; the other tabs
+ * name the TV in the app bar. Search (Apps only) and the overflow sit on the right.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -121,9 +155,24 @@ fun DeviceTabsScreen(
     var onlyLocked by rememberSaveable { mutableStateOf(false) }
     val q = state.query.trim().lowercase()
     val offline = device.state != DeviceState.Online
+    val list = rememberLazyListState()
+    // "See changes" lands on Tweaks scrolled to Recent changes, the list's second item.
+    var toChanges by remember { mutableStateOf(false) }
+    LaunchedEffect(tab, toChanges) {
+        if (tab == TvTab.Tweaks && toChanges) { list.scrollToItem(1); toChanges = false }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        // Each tab's main action as Material's extended FAB: install on Apps, upload on Files.
+        floatingActionButton = {
+            if (!offline) when (tab) {
+                TvTab.Apps -> ExtendedFloatingActionButton(onClick = actions.pickApp, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Install app") })
+                @Suppress("DEPRECATION") // the AutoMirrored set isn't in icons-core
+                TvTab.Files -> ExtendedFloatingActionButton(onClick = { actions.pickFile(ui.files.folder) }, icon = { Icon(TileIcons.Upload, null) }, text = { Text("Upload files") })
+                else -> {}
+            }
+        },
         topBar = {
             if (searching) {
                 TopAppBar(
@@ -148,7 +197,8 @@ fun DeviceTabsScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { TvTitle(state, actions) },
+                    // Overview shows the TV big below; the bar says which TV only on the other tabs.
+                    title = { if (tab != TvTab.Overview) BarName(state) },
                     actions = {
                         if (REMOTE_ENABLED) TextButton(onClick = actions.remote, enabled = !offline) { Text("Remote") }
                         // Search only looks through apps, so it only shows on the Apps tab.
@@ -181,14 +231,15 @@ fun DeviceTabsScreen(
     ) { pad ->
         LazyColumn(
             Modifier.fillMaxSize().padding(pad),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            state = list,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val snap = ui.snapshot
             val live = snap?.takeIf { !offline }
             when (tab) {
                 TvTab.Overview -> {
-                    item { TvCard(state, live) }
+                    item { Hero(state, live, actions) }
                     val restart = state.restarting[device.id]
                     if (restart != null) {
                         item { RestartingCard(restart, state.now) }
@@ -202,16 +253,22 @@ fun DeviceTabsScreen(
                     } else if (offline && snap == null) {
                         item { Muted(Copy.noStats(device.state)) }
                     }
+                    val debloat = debloatState(ui)
                     if (!offline) {
                         item {
                             ActionTiles(
                                 actions,
-                                canDebloat = ui.lists is Suggestions.Pick || ui.lists is Suggestions.Ready,
+                                count = debloat.count,
+                                todo = debloat.todo,
                                 disabling = ui.busy == DISABLING,
+                                // With nothing left on the list, Debloat leads to the apps for one-off changes.
+                                onDebloat = if (debloat.todo) actions.debloat else ({ tab = TvTab.Apps }),
                             )
                         }
-                        item { Panel("Suggested for this TV") { SuggestionsSummary(ui.lists) } }
                     }
+                    item { SectionTitle("Suggested for this TV") }
+                    item { SuggestedCard(ui.lists, debloat, offline, onChanges = { toChanges = true; tab = TvTab.Tweaks }) }
+                    item { AndroidCard(state, snap, offline, onUpdates = actions.checkUpdates) }
                 }
                 TvTab.Apps -> {
                     val locked = ui.apps.count { it.protectedReason != null }
@@ -229,15 +286,6 @@ fun DeviceTabsScreen(
                 TvTab.Files -> {
                     if (offline) item { Muted("Connect to the TV to see its files.") }
                     else {
-                        item {
-                            // The folder switch below picks where it lands, so no menu is needed here.
-                            @Suppress("DEPRECATION") // the AutoMirrored set isn't in icons-core
-                            FilledTonalButton(onClick = { actions.pickFile(ui.files.folder) }, Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Send, contentDescription = null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Send a file to ${Copy.folder(ui.files.folder)}")
-                            }
-                        }
                         item { FilesBlock(ui.files, state.now, actions) }
                     }
                 }
@@ -291,77 +339,14 @@ private fun Muted(text: String) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-/** The app bar's title: which TV, and its menu of TV things (switch, add, rename, forget). */
-@Composable
-private fun TvTitle(state: UiState, actions: DeviceActions) {
-    val device = state.selected ?: return
-    var open by remember { mutableStateOf(false) }
-    var forgetting by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
-    if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
-    if (renaming) RenameDialog(device.nickname.orEmpty(), device.model ?: networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
-    val offlineCount = state.devices.count { it.state != DeviceState.Online }
-    Box {
-        Row(
-            Modifier.clip(MaterialTheme.shapes.large).clickable { open = true }.padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val kind = deviceKind(device)
-            Icon(DeviceIcons.of(kind), contentDescription = kind.word(), Modifier.padding(end = 12.dp))
-            Column(Modifier.weight(1f, fill = false)) {
-                val title = name(device)
-                Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                // Under a model-name title, the model would only say it twice.
-                val maker = device.manufacturer ?: device.hit.maker
-                val made = if (title == device.model) maker.orEmpty() else made(maker, device.model)
-                if (made.isNotEmpty()) {
-                    Text(made, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch TV")
-        }
-        DropdownMenu(open, onDismissRequest = { open = false }) {
-            state.devices
-                .filter { state.showOffline || it.state == DeviceState.Online || it.id == state.selectedId }
-                .forEach { d ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(name(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    StateDot(d.state)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        if (d.state == DeviceState.Online) Copy.state(d.state)
-                                        else d.lastSeen?.let { "${Copy.state(d.state)}, seen ${Copy.ago(it, state.now)}" } ?: Copy.state(d.state),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        },
-                        leadingIcon = { Icon(DeviceIcons.of(deviceKind(d)), contentDescription = deviceKind(d).word()) },
-                        onClick = { open = false; actions.select(d.id) },
-                    )
-                }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Show offline ($offlineCount)") },
-                leadingIcon = { Checkbox(state.showOffline, onCheckedChange = null) },
-                onClick = { actions.showOffline(!state.showOffline) },
-            )
-            DropdownMenuItem(text = { Text("Add a TV") }, leadingIcon = { Icon(Icons.Default.Add, null) }, onClick = { open = false; actions.addDevice() })
-            DropdownMenuItem(text = { Text("Rename this TV") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { open = false; renaming = true })
-            DropdownMenuItem(text = { Text("Forget this TV") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { open = false; forgetting = true })
-        }
-    }
-}
-
-/** The overflow: app-wide items, the same whichever TV is shown. */
+/** The overflow: this TV's own items first, named so it's clear which TV they touch, then the app-wide ones. */
 @Composable
 private fun AppMenu(state: UiState, actions: DeviceActions) {
     var open by remember { mutableStateOf(false) }
     var about by remember { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    val device = state.selected ?: return
     if (about) AboutDialog(
         when (val l = state.device.lists) {
             is Suggestions.Pick -> l.commit
@@ -370,12 +355,209 @@ private fun AppMenu(state: UiState, actions: DeviceActions) {
         },
         onDismiss = { about = false },
     )
+    if (forgetting) ForgetDialog(name(device), onForget = { forgetting = false; actions.forget(device.id) }, onDismiss = { forgetting = false })
+    if (renaming) RenameDialog(device.nickname.orEmpty(), device.model ?: networkName(device), onSave = { renaming = false; actions.rename(device.id, it) }, onDismiss = { renaming = false })
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
         DropdownMenu(open, onDismissRequest = { open = false }) {
+            Text(name(device), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            DropdownMenuItem(text = { Text("Rename this TV") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { open = false; renaming = true })
+            DropdownMenuItem(text = { Text("Forget this TV") }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { open = false; forgetting = true })
+            HorizontalDivider()
             DropdownMenuItem(text = { Text("Advanced") }, leadingIcon = { Icon(Icons.Default.List, null) }, onClick = { open = false; actions.advanced() })
             DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = { open = false; actions.settings() })
             DropdownMenuItem(text = { Text("About & licences") }, leadingIcon = { Icon(Icons.Default.Info, null) }, onClick = { open = false; about = true })
         }
     }
+}
+
+/** The bar on every tab but Overview: which TV, nothing to open. Switching happens on Overview. */
+@Composable
+private fun BarName(state: UiState) {
+    val device = state.selected ?: return
+    val kind = deviceKind(device)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(DeviceIcons.of(kind), contentDescription = kind.word(), Modifier.padding(end = 12.dp))
+        Text(name(device), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+/** The TV as Overview's hero: an Expressive cookie-shaped tile, its name, how it's doing, and the switcher. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Hero(state: UiState, live: Snapshot?, actions: DeviceActions) {
+    val device = state.selected ?: return
+    val kind = deviceKind(device)
+    val c = MaterialTheme.colorScheme
+    // Offline: the tile greys out, so it agrees with the Offline pill.
+    val on = device.state == DeviceState.Online
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            Modifier.size(80.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(if (on) c.primaryContainer else c.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(DeviceIcons.of(kind), contentDescription = kind.word(), Modifier.size(40.dp), tint = if (on) c.onPrimaryContainer else c.outline)
+        }
+        val title = name(device)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = MaterialTheme.typography.headlineMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 16.dp))
+            // Under a model-name title, the model would only say it twice.
+            val maker = device.manufacturer ?: device.hit.maker
+            val made = if (title == device.model) maker.orEmpty() else made(maker, device.model)
+            if (made.isNotEmpty()) Text(made, style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant)
+        }
+        val health = live?.let { Copy.health(it, heaviest(it, state.device.apps)) }
+        Surface(shape = CircleShape, color = if (health?.ok == false) c.errorContainer else c.secondaryContainer) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (health != null) {
+                    Icon(if (health.ok) Icons.Default.CheckCircle else Icons.Default.Warning, null, Modifier.size(16.dp), tint = if (health.ok) c.primary else c.error)
+                } else StateDot(device.state)
+                Spacer(Modifier.width(8.dp))
+                Text(health?.text ?: Copy.state(device.state), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        TvChips(state, actions)
+    }
+}
+
+/** One chip per TV to switch, offline ones dimmed, then "+ Device" as the last chip. */
+@Composable
+private fun TvChips(state: UiState, actions: DeviceActions) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (state.devices.size > 1) state.devices.forEach { d ->
+            FilterChip(
+                selected = d.id == state.selectedId,
+                onClick = { actions.select(d.id) },
+                label = { Text(name(d), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 104.dp)) },
+                leadingIcon = {
+                    Box {
+                        Icon(DeviceIcons.of(deviceKind(d)), contentDescription = deviceKind(d).word(), Modifier.size(18.dp))
+                        Box(Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp)) { StateDot(d.state) }
+                    }
+                },
+                modifier = if (d.state == DeviceState.Online) Modifier else Modifier.alpha(0.6f),
+            )
+        }
+        // Adding a TV sits with the TVs, as the last chip.
+        AssistChip(onClick = actions.addDevice, label = { Text("Device") }, leadingIcon = { Icon(Icons.Default.Add, contentDescription = "Add a", Modifier.size(18.dp)) })
+    }
+}
+
+/** Where the suggested list stands on this TV, worked out from the live app list. */
+internal data class DebloatState(
+    /** Apps on the list that are installed here and Tellyscope may turn off, on or off. */
+    val total: Int,
+    /** Of those, the ones still on. */
+    val on: Int,
+    /** Apps Tellyscope turned off that are on again, often after a TV update. */
+    val back: Int,
+    /** Apps on the list still on, plus any that came back: the number on the Debloat tile. */
+    val count: Int,
+    /** Debloat has something to do: apps to turn off, or a TV to pick. */
+    val todo: Boolean,
+)
+
+internal fun debloatState(ui: DeviceUi): DebloatState {
+    // History lives on this phone, so it only knows what this phone turned off.
+    val ours = ui.history.filter { it.action == Action.Disable && it.undoneAt == null }.map { it.packageName }.toSet()
+    val back = ui.apps.filter { it.enabled && it.packageName in ours }.map { it.packageName }.toSet()
+    val ready = ui.lists as? Suggestions.Ready
+    val listed = ready?.list?.let { l -> l.groups.flatMap { g -> g.packages.map { it.pkg } }.filter { it !in l.keep }.toSet() }.orEmpty()
+    val candidates = ui.apps.filter { it.packageName in listed && (!it.enabled || it.protectedReason == null) }
+    val on = candidates.filter { it.enabled }.map { it.packageName }.toSet()
+    val count = (on + back).size
+    return DebloatState(candidates.size, on.size, back.size, count, count > 0 || ui.lists is Suggestions.Pick)
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, Modifier.padding(start = 4.dp, top = 4.dp), style = MaterialTheme.typography.titleMedium)
+}
+
+/**
+ * The list in one line of plain text, with See changes beside it. When apps Tellyscope turned off
+ * are on again, one red line says so; the Debloat tile above carries the count and the fix.
+ */
+@Composable
+private fun SuggestedCard(lists: Suggestions?, d: DebloatState, offline: Boolean, onChanges: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val apps = { n: Int -> if (n == 1) "1 app" else "$n apps" }
+    Card(colors = CardDefaults.cardColors(containerColor = c.surfaceContainerLow), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when (lists) {
+                        is Suggestions.Ready -> when {
+                            d.total == 0 -> "Nothing from the ${lists.list.name} list is on this TV"
+                            d.on == 0 -> if (d.total == 1) "The suggested app is off" else "All ${d.total} suggested apps are off"
+                            else -> "${d.total - d.on} of ${d.total} suggested apps are off"
+                        }
+                        is Suggestions.Pick -> "Tap Debloat to pick your TV"
+                        Suggestions.Unavailable -> "Couldn't load the device lists"
+                        null -> if (offline) "Connect to the TV to see its suggestions" else "Looking up this TV's list\u2026"
+                    },
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                TextButton(onClick = onChanges) { Text("See changes") }
+            }
+            if (d.back > 0) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("Action required: ") }
+                        append("${apps(d.back)} came back on")
+                    },
+                    Modifier.padding(end = 8.dp, bottom = 4.dp),
+                    style = MaterialTheme.typography.bodyLarge, color = c.error,
+                )
+            }
+            val note = when {
+                lists is Suggestions.Unavailable -> "Check the phone's internet and open this TV again."
+                lists is Suggestions.Pick -> "Tellyscope doesn't know this model yet."
+                lists is Suggestions.Ready && !d.todo -> "Debloat now opens Apps for one-off changes."
+                else -> null
+            }
+            note?.let { Text(it, Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant) }
+            if (lists is Suggestions.Ready || lists is Suggestions.Pick) {
+                Text("Lists adapted from cleanyourtv (MIT).", Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** Which Android and when it last updated, with a way to make the TV look for a newer one. */
+@Composable
+private fun AndroidCard(state: UiState, snap: Snapshot?, offline: Boolean, onUpdates: () -> Unit) {
+    val device = state.selected ?: return
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), shape = MaterialTheme.shapes.large) {
+        StatusRow(
+            Icons.Default.Info,
+            device.android?.let { "Android $it" } ?: "Android",
+            (snap?.softwareMonth ?: device.lastKnown?.softwareMonth)?.let { "Updated ${Copy.month(it)}" },
+            "Check for updates", !offline, onUpdates,
+        )
+    }
+}
+
+@Composable
+private fun StatusRow(icon: ImageVector, title: String, sub: String?, button: String, enabled: Boolean, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = sub?.let { { Text(it) } },
+        leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        trailingContent = { TextButton(onClick = onClick, enabled = enabled) { Text(button) } },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+
+private object TileIcons {
+    val Upload = icon("Upload", "M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z")
+
+    private fun icon(name: String, path: String) = ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
+        .addPath(PathParser().parsePathString(path).toNodes(), pathFillType = PathFillType.NonZero, fill = SolidColor(Color.Black))
+        .build()
 }
