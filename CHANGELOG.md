@@ -16,6 +16,8 @@ until this file has a section for its version.
 - **Improved:** The TV tops every tab and folds into the bar as you scroll. [#71](../../pull/71)
 - **Improved:** Apps splits into Running, Installed and Built-in tabs, with the apps the TV needs folded under System. [#72](../../pull/72)
 - **Improved:** The TV's icon and name glide into the bar, Apps and Files pin their buttons, and empty pages say so. [#74](../../pull/74)
+- **Improved:** Protected apps drop the lock icon; the line saying why stays. [#74](../../pull/74)
+- **Fixed:** The upload icon draws properly again. [#74](../../pull/74)
 - **Fixed:** Welcome and pairing buttons no longer hide under the phone's navigation buttons. [#69](../../pull/69)
 
 ## 0.5.0 — 2026-10-24
